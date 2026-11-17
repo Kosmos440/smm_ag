@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SMM Агент · Панель управления</title>
+  <link rel="stylesheet" href="/console/style.css">
+  <script src="/console/app.js" type="module"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="mark" aria-hidden="true">≋</span> SMM Агент</div>
+    <nav aria-label="Разделы">
+      <a href="#sources"><span aria-hidden="true">◉</span> Источники</a>
+      <a href="#channels"><span aria-hidden="true">▤</span> Каналы</a>
+      <a href="#presets"><span aria-hidden="true">◇</span> Пресеты</a>
+      <a href="#review"><span aria-hidden="true">✓</span> Согласование</a>
+      <a href="#news"><span aria-hidden="true">≡</span> Лента сайта</a>
+    </nav>
+    <div class="connection" id="connection">Проверяем API…</div>
+  </aside>
+  <main>
+    <header class="heading">
+      <div><h1 id="title">Источники</h1><p id="description">Подключайте ленты и проверяйте, какие материалы получает агент.</p></div>
+      <button id="create" class="primary" type="button">Добавить источник</button>
+    </header>
+    <div id="notice" role="status" hidden></div>
+    <section aria-labelledby="list-title" class="list">
+      <header class="list-header"><h2 id="list-title">Каталог источников</h2><button id="refresh" type="button">Обновить</button></header>
+      <div id="items" aria-live="polite"></div>
+      <footer id="pages" hidden><button id="previous">Назад</button><span id="page"></span><button id="next">Далее</button></footer>
+    </section>
+  </main>
+  <dialog id="editor">
+    <form id="form">
+      <h2 id="form-title"></h2>
+      <div id="fields"></div>
+      <p id="form-error" role="alert" hidden></p>
+      <div class="actions"><button id="cancel" type="button">Отмена</button><button class="primary">Сохранить</button></div>
+    </form>
+  </dialog>
+  <dialog id="details"><div class="detail"><h2 id="detail-title"></h2><div id="detail-items"></div><form method="dialog" class="actions"><button>Закрыть</button></form></div></dialog>
+</body>
+</html>

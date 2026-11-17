@@ -1,0 +1,554 @@
+openapi: 3.1.0
+info:
+  title: SMM Agent API
+  version: 0.1.0
+  description: Local management and published site news. Write requests accept one JSON object with known fields and a maximum body size of 32 KiB.
+paths:
+  /api/health:
+    get:
+      operationId: health
+      summary: Check that the API responds
+      responses:
+        '200':
+          description: API process is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {const: ok}
+  /api/ready:
+    get:
+      operationId: ready
+      summary: Check the database connection
+      responses:
+        '200':
+          description: Database is reachable
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {const: ready}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/channels:
+    get:
+      operationId: listChannels
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Page of channels
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChannelList'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createChannel
+      requestBody: {$ref: '#/components/requestBodies/Channel'}
+      responses:
+        '201':
+          description: Channel created
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Channel'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/channels/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      operationId: getChannel
+      responses:
+        '200': {$ref: '#/components/responses/Channel'}
+        default: {$ref: '#/components/responses/Error'}
+    put:
+      operationId: updateChannel
+      summary: Replace channel settings
+      requestBody: {$ref: '#/components/requestBodies/Channel'}
+      responses:
+        '200': {$ref: '#/components/responses/Channel'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/channels/{id}/events:
+    get:
+      operationId: listChannelEvents
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Page of event cards
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventList'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/channels/{id}/publications:
+    get:
+      operationId: listChannelPublications
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Page of publication attempts and current states
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PublicationList'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/filter-suggestions:
+    post:
+      operationId: suggestFilters
+      summary: Generate channel filter suggestions from a topic and exclusions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topic, audience]
+              properties:
+                topic: {type: string, maxLength: 200}
+                audience: {type: string, maxLength: 300}
+                exclusions: {type: string, maxLength: 1000}
+      responses:
+        '200':
+          description: Suggested filters for review
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keywords, blocked_terms]
+                properties:
+                  keywords:
+                    type: array
+                    items: {type: string}
+                  blocked_terms:
+                    type: array
+                    items: {type: string}
+        '400':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+  /api/v1/sources:
+    get:
+      operationId: listSources
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Page of catalog entries
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SourceList'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createSource
+      requestBody: {$ref: '#/components/requestBodies/Source'}
+      responses:
+        '201':
+          description: Source created
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Source'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/sources/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      operationId: getSource
+      responses:
+        '200': {$ref: '#/components/responses/Source'}
+        default: {$ref: '#/components/responses/Error'}
+    put:
+      operationId: updateSource
+      summary: Replace source settings or change its status
+      requestBody: {$ref: '#/components/requestBodies/Source'}
+      responses:
+        '200': {$ref: '#/components/responses/Source'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/sources/{id}/probe:
+    post:
+      operationId: probeSource
+      summary: Preview recent materials from a stored source
+      description: Fetch up to five preview items from a candidate or verified source without updating the catalog, poll status, or publication queue.
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Source preview
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 5
+                    items:
+                      type: object
+                      required: [title, url]
+                      properties:
+                        title: {type: string, maxLength: 4096}
+                        url: {type: string, format: uri, maxLength: 2048}
+                        published_at: {type: string, format: date-time}
+        '409': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/presets:
+    get:
+      operationId: listPresets
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Page of reusable presets
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresetList'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createPreset
+      requestBody: {$ref: '#/components/requestBodies/Preset'}
+      responses:
+        '201':
+          description: Preset created
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Preset'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/presets/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      operationId: getPreset
+      responses:
+        '200': {$ref: '#/components/responses/Preset'}
+        default: {$ref: '#/components/responses/Error'}
+    put:
+      operationId: updatePreset
+      requestBody: {$ref: '#/components/requestBodies/Preset'}
+      responses:
+        '200': {$ref: '#/components/responses/Preset'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/review:
+    get:
+      operationId: listReview
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Page of publications awaiting review
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PublicationList'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/review/{id}:
+    put:
+      operationId: decideReview
+      summary: Approve or reject a publication
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision]
+              properties:
+                decision: {type: string, enum: [approve, reject]}
+      responses:
+        '200':
+          description: Updated publication
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Publication'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/site/news:
+    get:
+      operationId: listSiteNews
+      summary: Read published site news
+      parameters:
+        - name: channel_id
+          in: query
+          schema: {$ref: '#/components/schemas/ID'}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Page of published site posts
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SitePostList'}
+        default: {$ref: '#/components/responses/Error'}
+components:
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/ID'}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+    Offset:
+      name: offset
+      in: query
+      schema: {type: integer, minimum: 0, default: 0}
+  headers:
+    Location:
+      description: Path of the created resource
+      schema: {type: string}
+  requestBodies:
+    Channel:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ChannelInput'
+            unevaluatedProperties: false
+    Source:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SourceInput'
+            unevaluatedProperties: false
+    Preset:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/PresetInput'
+            unevaluatedProperties: false
+  responses:
+    Channel:
+      description: Channel and its settings
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Channel'}
+    Source:
+      description: Source catalog entry and collection status
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Source'}
+    Preset:
+      description: Preset and its settings
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Preset'}
+    Error:
+      description: Request validation, resource, or service error
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+  schemas:
+    ID:
+      type: integer
+      format: int64
+      minimum: 1
+    Name:
+      type: string
+      minLength: 1
+      maxLength: 120
+    Terms:
+      type: array
+      maxItems: 50
+      items: {type: string, minLength: 1, maxLength: 100}
+    Settings:
+      type: object
+      additionalProperties: false
+      required: [topic, audience]
+      properties:
+        topic: {type: string, minLength: 1, maxLength: 200}
+        audience: {type: string, minLength: 1, maxLength: 300}
+        keywords: {$ref: '#/components/schemas/Terms'}
+        blocked_terms: {$ref: '#/components/schemas/Terms'}
+        max_age_minutes:
+          type: integer
+          minimum: 0
+          maximum: 524160
+          default: 1440
+          description: Zero selects the default
+        reserve_after_minutes:
+          type: integer
+          minimum: 0
+          maximum: 10080
+          default: 30
+          description: Zero selects the default
+        min_interval_minutes: {type: integer, minimum: 0, maximum: 10080, default: 0}
+        time_zone: {type: string, default: UTC, example: Europe/Moscow}
+        quiet_start_hour: {type: [integer, 'null'], minimum: 0, maximum: 23}
+        quiet_end_hour: {type: [integer, 'null'], minimum: 0, maximum: 23}
+        urgent_outside_hours: {type: boolean, default: false}
+        require_approval: {type: boolean, default: false}
+    ChannelInput:
+      type: object
+      required: [name, settings]
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        telegram_chat_id:
+          type: string
+          description: Public @username or numeric Telegram chat ID. A nonempty Telegram destination or website must be configured.
+        website: {type: boolean, default: false}
+        enabled: {type: boolean, default: false}
+        settings: {$ref: '#/components/schemas/Settings'}
+    Channel:
+      allOf:
+        - $ref: '#/components/schemas/ChannelInput'
+        - type: object
+          required: [id, website, enabled]
+          properties:
+            id: {$ref: '#/components/schemas/ID'}
+    SourceInput:
+      type: object
+      required: [name, organization, url, kind]
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        organization: {$ref: '#/components/schemas/Name'}
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: Public HTTP(S) endpoint without credentials or fragment. Telegram sources use an HTTPS public t.me channel URL.
+        kind: {type: string, enum: [rss, website, telegram]}
+        status: {type: string, enum: [candidate, verified, disabled], default: candidate}
+        topics: {$ref: '#/components/schemas/Terms'}
+        primary: {type: boolean, default: false}
+    Source:
+      allOf:
+        - $ref: '#/components/schemas/SourceInput'
+        - type: object
+          required: [id, status, topics, primary]
+          properties:
+            id: {$ref: '#/components/schemas/ID'}
+            last_success: {type: string, format: date-time}
+            last_error: {type: string}
+    PresetInput:
+      type: object
+      required: [name, settings]
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        settings: {$ref: '#/components/schemas/Settings'}
+    Preset:
+      allOf:
+        - $ref: '#/components/schemas/PresetInput'
+        - type: object
+          required: [id]
+          properties:
+            id: {$ref: '#/components/schemas/ID'}
+    Event:
+      type: object
+      required: [id, channel_id, title, summary, facts, version, first_seen, updated_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        channel_id: {$ref: '#/components/schemas/ID'}
+        title: {type: string}
+        summary: {type: string}
+        version: {type: integer}
+        first_seen: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        facts:
+          type: array
+          items:
+            type: object
+            required: [key, value, url, organization]
+            properties:
+              key: {type: string}
+              value: {type: string}
+              url: {type: string}
+              organization: {type: string}
+    Publication:
+      type: object
+      required: [id, channel_id, event_id, version, target, state, priority, urgent, title, body, source_url, reason, created_at, expires_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        channel_id: {$ref: '#/components/schemas/ID'}
+        event_id: {$ref: '#/components/schemas/ID'}
+        version: {type: integer}
+        target: {type: string, enum: [telegram, website]}
+        destination: {type: string}
+        state: {type: string, enum: [review, pending, sending, sent, rejected, expired, uncertain, failed]}
+        priority: {type: integer}
+        urgent: {type: boolean}
+        title: {type: string}
+        body: {type: string}
+        source_url: {type: string}
+        reason: {type: string}
+        external_id: {type: string}
+        last_error: {type: string}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        sent_at: {type: string, format: date-time}
+    SitePost:
+      type: object
+      required: [id, channel_id, event_id, version, title, body, source_url, published_at]
+      properties:
+        id: {$ref: '#/components/schemas/ID'}
+        channel_id: {$ref: '#/components/schemas/ID'}
+        event_id: {$ref: '#/components/schemas/ID'}
+        version: {type: integer}
+        title: {type: string}
+        body: {type: string}
+        source_url: {type: string}
+        published_at: {type: string, format: date-time}
+    Page:
+      type: object
+      required: [items, limit, offset]
+      properties:
+        items: {type: array}
+        limit: {type: integer}
+        offset: {type: integer}
+    ChannelList:
+      $ref: '#/components/schemas/Page'
+      properties:
+        items: {items: {$ref: '#/components/schemas/Channel'}}
+    SourceList:
+      $ref: '#/components/schemas/Page'
+      properties:
+        items: {items: {$ref: '#/components/schemas/Source'}}
+    PresetList:
+      $ref: '#/components/schemas/Page'
+      properties:
+        items: {items: {$ref: '#/components/schemas/Preset'}}
+    EventList:
+      $ref: '#/components/schemas/Page'
+      properties:
+        items: {items: {$ref: '#/components/schemas/Event'}}
+    PublicationList:
+      $ref: '#/components/schemas/Page'
+      properties:
+        items: {items: {$ref: '#/components/schemas/Publication'}}
+    SitePostList:
+      $ref: '#/components/schemas/Page'
+      properties:
+        items: {items: {$ref: '#/components/schemas/SitePost'}}
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
