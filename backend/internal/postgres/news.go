@@ -38,19 +38,25 @@ func (s *Store) SaveMaterials(ctx context.Context, sourceID int64, materials []m
 		if !material.PublishedAt.IsZero() {
 			publishedAt = &material.PublishedAt
 		}
+		media := material.Media
+		if media == nil {
+			media = []model.Media{}
+		}
 		batch.Queue(`insert into materials
-			(source_id, external_id, content_hash, url, title, body, organization, is_primary, published_at, fetched_at)
-			select id, $2, $3, $4, $5, $6, organization, is_primary, $7, $8
+			(source_id, external_id, content_hash, url, title, body, organization, is_primary, published_at, fetched_at, media)
+			select id, $2, $3, $4, $5, $6, organization, is_primary, $7, $8, $9
 			from sources where id = $1 and status = 'verified'
-			on conflict (source_id, external_id, content_hash) do nothing`,
-			sourceID, externalID, contentHash[:], material.URL, material.Title, material.Body, publishedAt, material.FetchedAt)
+			on conflict (source_id, external_id, content_hash) do update
+			set media = excluded.media
+			where materials.media = '[]'::jsonb and excluded.media <> '[]'::jsonb`,
+			sourceID, externalID, contentHash[:], material.URL, material.Title, material.Body, publishedAt, material.FetchedAt, media)
 	}
 	return s.pool.SendBatch(ctx, batch).Close()
 }
 
 func (s *Store) UnprocessedMaterials(ctx context.Context, channelID int64, since time.Time, limit int) ([]model.SourcedMaterial, error) {
 	rows, err := s.pool.Query(ctx, `select
-		m.id, m.source_id, m.external_id, m.url, m.title, m.body, m.organization, m.is_primary, m.published_at, m.fetched_at,
+		m.id, m.source_id, m.external_id, m.url, m.title, m.body, m.organization, m.is_primary, m.published_at, m.fetched_at, m.media,
 		s.id, s.name, s.organization, s.url, s.kind, s.status, s.topics, s.is_primary, s.last_success, s.last_error
 		from materials m join sources s on s.id = m.source_id
 		where s.status = 'verified' and coalesce(m.published_at, m.fetched_at) >= $2
@@ -65,7 +71,7 @@ func (s *Store) UnprocessedMaterials(ctx context.Context, channelID int64, since
 		var result model.SourcedMaterial
 		m, source := &result.Material, &result.Source
 		var publishedAt, lastSuccess *time.Time
-		err := row.Scan(&m.ID, &m.SourceID, &m.ExternalID, &m.URL, &m.Title, &m.Body, &m.Organization, &m.Primary, &publishedAt, &m.FetchedAt,
+		err := row.Scan(&m.ID, &m.SourceID, &m.ExternalID, &m.URL, &m.Title, &m.Body, &m.Organization, &m.Primary, &publishedAt, &m.FetchedAt, &m.Media,
 			&source.ID, &source.Name, &source.Organization, &source.URL, &source.Kind, &source.Status, &source.Topics, &source.Primary, &lastSuccess, &source.LastError)
 		if publishedAt != nil {
 			m.PublishedAt = *publishedAt

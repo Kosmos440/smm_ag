@@ -111,6 +111,7 @@ func readArticle(root *html.Node, base *url.URL) model.Material {
 		texts = append(texts, ingest.Text(paragraph))
 	}
 	material := model.Material{
+		Media:       ingest.HTMLMedia(root, base),
 		Title:       title,
 		Body:        strings.Join(texts, " "),
 		PublishedAt: publishedAt(root),

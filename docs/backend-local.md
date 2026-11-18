@@ -67,3 +67,18 @@ docker compose --profile test run --build --rm integration
 Профиль запускает `go test -count=1 -v ./...` с PostgreSQL. Интеграционные тесты работают во временных схемах и удаляют их после проверки. Они покрывают сохранение материалов и отсутствие дублей, версии событий, согласование, восстановление очереди и выдачу ленты. В сквозном тесте внешняя доставка заменяется тестовой реализацией.
 
 При запуске из `backend` используйте `go test ./...` и `go vet ./...`. Чтобы включить сценарии с БД, задайте `SMM_TEST_DATABASE_URL` с адресом тестовой PostgreSQL. Без этой переменной интеграционные сценарии пропускаются.
+
+## S3 на диске D:
+
+Перед первым запуском создайте каталоги и ключи в .env.
+
+```powershell
+New-Item -ItemType Directory -Force D:/smm-agent-media/objects,D:/smm-agent-media/uploads
+Add-Content .env ("S3_ACCESS_KEY=" + [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)))
+Add-Content .env ("S3_SECRET_KEY=" + [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)))
+docker compose up -d --build media api worker
+```
+
+Генерация ключей выполняется один раз. SMM_MEDIA_DIR по умолчанию D:/smm-agent-media. S3_BUCKET по умолчанию news-media. Worker использует S3_ENDPOINT=http://media:8333 и MEDIA_TEMP_DIR=/media-upload. S3_ACCESS_KEY и S3_SECRET_KEY обязательны для Compose. Порт S3 наружу не публикуется.
+
+Медиафайлы и временные загрузки находятся на D:. Служебные базы SeaweedFS расположены в Docker-томах media-master, media-filer и media-control, чтобы обойти ошибку rename Windows bind mount. Сохраняйте их вместе с каталогом objects при резервном копировании. Подробности хранения, ограничений и проверки приведены в [media.md](media.md).

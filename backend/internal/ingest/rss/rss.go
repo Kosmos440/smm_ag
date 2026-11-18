@@ -25,6 +25,7 @@ func New(client *http.Client) *Collector {
 }
 
 type link struct {
+	Type string `xml:"type,attr"`
 	Href string `xml:"href,attr"`
 	Rel  string `xml:"rel,attr"`
 	Text string `xml:",chardata"`
@@ -43,6 +44,11 @@ func (t text) plain() string {
 }
 
 type entry struct {
+	Enclosures []attachment `xml:"enclosure"`
+	Media      []attachment `xml:"http://search.yahoo.com/mrss/ content"`
+	MediaGroup struct {
+		Media []attachment `xml:"http://search.yahoo.com/mrss/ content"`
+	} `xml:"http://search.yahoo.com/mrss/ group"`
 	Title       text   `xml:"title"`
 	Links       []link `xml:"link"`
 	GUID        string `xml:"guid"`
@@ -55,6 +61,39 @@ type entry struct {
 	Date        string `xml:"date"`
 	Published   string `xml:"published"`
 	Updated     string `xml:"updated"`
+}
+
+type attachment struct {
+	URL    string `xml:"url,attr"`
+	Type   string `xml:"type,attr"`
+	Medium string `xml:"medium,attr"`
+}
+
+func (item entry) attachments(base *url.URL) []model.Media {
+	values := append(append([]attachment{}, item.Enclosures...), item.Media...)
+	values = append(values, item.MediaGroup.Media...)
+	for _, link := range item.Links {
+		if link.Rel == "enclosure" {
+			values = append(values, attachment{URL: link.Href, Type: link.Type})
+		}
+	}
+	var result []model.Media
+	seen := map[string]bool{}
+	for _, value := range values {
+		kind := ""
+		if strings.HasPrefix(value.Type, "image/") || value.Medium == "image" {
+			kind = "photo"
+		}
+		if strings.HasPrefix(value.Type, "video/") || value.Medium == "video" {
+			kind = "video"
+		}
+		raw := ingest.ResolveLink(base, value.URL)
+		if kind != "" && raw != "" && !seen[raw] && len(result) < 10 {
+			result = append(result, model.Media{URL: raw, Kind: kind})
+			seen[raw] = true
+		}
+	}
+	return result
 }
 
 type document struct {
@@ -112,6 +151,7 @@ func parse(page ingest.Page, source model.Source) ([]model.Material, error) {
 			continue
 		}
 		material := model.Material{
+			Media:      item.attachments(page.URL),
 			ExternalID: id,
 			URL:        rawLink,
 			Title:      title,

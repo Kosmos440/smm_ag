@@ -99,6 +99,7 @@ func parse(page ingest.Page, source model.Source, channel string) ([]model.Mater
 			continue
 		}
 		material := model.Material{
+			Media:       ingest.HTMLMedia(post, page.URL),
 			ExternalID:  fmt.Sprintf("%s/%d", channel, id),
 			URL:         fmt.Sprintf("https://t.me/%s/%d", channel, id),
 			Title:       title,

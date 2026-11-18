@@ -21,7 +21,7 @@ func TestContinuationRepliesToPreviousMessage(t *testing.T) {
 			Reply  replyParameters `json:"reply_parameters"`
 		}
 		err := json.NewDecoder(request.Body).Decode(&payload)
-		if err != nil || payload.ChatID != "@channel" || payload.Reply.MessageID != 42 || !strings.HasPrefix(payload.Text, "Дополнение: ") {
+		if err != nil || payload.ChatID != "@channel" || payload.Reply.MessageID != 42 || !strings.HasPrefix(payload.Text, "<b>Дополнение: ") {
 			t.Errorf("invalid request: %+v (%v)", payload, err)
 		}
 		fmt.Fprint(w, `{"ok":true,"result":{"message_id":43}}`)

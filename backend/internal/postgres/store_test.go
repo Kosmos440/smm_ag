@@ -43,6 +43,7 @@ func TestDurablePublicationLifecycle(t *testing.T) {
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	material := model.Material{
+		Media:      []model.Media{{URL: "https://example.org/photo.jpg", Kind: "photo"}},
 		ExternalID: "notice-1", URL: "https://example.org/notice-1", Title: "Public notice",
 		Body: "First version", PublishedAt: now.Add(-time.Minute), FetchedAt: now,
 	}
@@ -52,6 +53,9 @@ func TestDurablePublicationLifecycle(t *testing.T) {
 	items, err := store.UnprocessedMaterials(ctx, channel.ID, now.Add(-time.Hour), 10)
 	if err != nil || len(items) != 1 {
 		t.Fatalf("duplicate inserted or material unavailable: %d, %v", len(items), err)
+	}
+	if len(items[0].Material.Media) != 1 {
+		t.Fatal("material attachment was lost")
 	}
 	evaluation := model.Evaluation{
 		Event:    model.Event{Title: material.Title, Summary: material.Body},
@@ -89,6 +93,9 @@ func TestDurablePublicationLifecycle(t *testing.T) {
 	telegram, err := store.ClaimPublication(ctx, channel.ID, model.TargetTelegram, channel.TelegramChatID, true, true, now, now)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(telegram.Media) != 1 {
+		t.Fatal("publication attachment was lost")
 	}
 	if err := store.FinishPublication(ctx, telegram.ID, model.PublicationSent, "41", "", now); err != nil {
 		t.Fatal(err)
