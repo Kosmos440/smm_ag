@@ -31,3 +31,15 @@ func TestRSSAndAtom(t *testing.T) {
 		})
 	}
 }
+
+func TestMediaRSSAndEnclosure(t *testing.T) {
+	base, _ := url.Parse("https://example.org/feed")
+	raw := `<rss xmlns:media="http://search.yahoo.com/mrss/"><channel><item><title>News</title><link>https://example.org/story</link><description>Body</description><media:content url="https://example.org/clip.mp4" type="video/mp4"/><enclosure url="https://example.org/photo.jpg" type="image/jpeg"/></item></channel></rss>`
+	items, err := parse(ingest.Page{URL: base, Body: []byte(raw)}, model.Source{})
+	if err != nil || len(items) != 1 || len(items[0].Media) != 2 {
+		t.Fatalf("attachments lost: %#v (%v)", items, err)
+	}
+	if items[0].Body != "Body" {
+		t.Fatalf("media replaced content: %s", items[0].Body)
+	}
+}

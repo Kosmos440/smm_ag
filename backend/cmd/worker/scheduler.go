@@ -202,6 +202,7 @@ func (s *scheduler) deliverOne(ctx context.Context, channel model.Channel, targe
 			return false, errors.Join(err, s.store.FinishPublication(finishCtx, post.ID, model.PublicationPending, "", "", time.Now().UTC()))
 		}
 	}
+	post.ChannelName = channel.Name
 	id, err := s.publishers[target].Send(ctx, post, previous)
 	state, message := model.PublicationSent, ""
 	if err != nil {

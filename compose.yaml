@@ -11,6 +11,24 @@ x-backend: &backend
 x-database-url: &database-url "postgres://smm:${POSTGRES_PASSWORD:?Copy .env.example to .env}@db:5432/smm?sslmode=disable"
 
 services:
+  media:
+    image: chrislusf/seaweedfs:4.52
+    entrypoint: ["/usr/bin/weed"]
+    command: ["mini", "-dir=/data", "-ip=media", "-ip.bind=0.0.0.0", "-webdav=false", "-admin.ui=false"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
+      S3_BUCKET: ${S3_BUCKET:-news-media}
+    volumes:
+      - type: bind
+        source: ${SMM_MEDIA_DIR:-D:/smm-agent-media}/objects
+        target: /data
+        bind:
+          create_host_path: false
+      - media-master:/data/m9333
+      - media-filer:/data/filerldb2
+      - media-control:/data/admin
+    restart: unless-stopped
   db:
     image: postgres:18.6
     environment:
@@ -41,7 +59,23 @@ services:
   worker:
     <<: *backend
     command: ["/app/worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+      media:
+        condition: service_started
+    volumes:
+      - type: bind
+        source: ${SMM_MEDIA_DIR:-D:/smm-agent-media}/uploads
+        target: /media-upload
+        bind:
+          create_host_path: false
     environment:
+      S3_ENDPOINT: http://media:8333
+      S3_BUCKET: ${S3_BUCKET:-news-media}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
+      MEDIA_TEMP_DIR: /media-upload
       DATABASE_URL: *database-url
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       COLLECT_INTERVAL: ${COLLECT_INTERVAL:-2m}
@@ -56,9 +90,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      media:
+        condition: service_started
     command: ["go", "test", "-count=1", "-v", "./..."]
     environment:
       SMM_TEST_DATABASE_URL: *database-url
+      SMM_TEST_S3_ENDPOINT: http://media:8333
+      S3_BUCKET: ${S3_BUCKET:-news-media}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
 
 volumes:
   pgdata:
+  media-master:
+  media-filer:
+  media-control:

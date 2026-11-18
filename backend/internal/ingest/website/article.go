@@ -13,7 +13,7 @@ import (
 )
 
 func readArticlePage(doc *html.Node, page *url.URL, canonical string, structured *structuredArticle) (model.Material, bool) {
-	material := model.Material{URL: canonical}
+	material := model.Material{URL: canonical, Media: ingest.HTMLMedia(doc, page)}
 	if material.URL == "" {
 		material.URL = page.String()
 	}

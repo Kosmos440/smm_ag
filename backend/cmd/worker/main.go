@@ -10,6 +10,7 @@ import (
 
 	"smmagent/internal/config"
 	"smmagent/internal/ingest/catalog"
+	"smmagent/internal/media"
 	"smmagent/internal/model"
 	"smmagent/internal/postgres"
 	"smmagent/internal/publishing"
@@ -49,7 +50,13 @@ func run() error {
 		tickInterval:    cfg.TickInterval,
 	}
 	if cfg.TelegramToken != "" {
-		worker.publishers[model.TargetTelegram] = telegramPublisher.New(cfg.TelegramToken)
+		publisher := telegramPublisher.New(cfg.TelegramToken)
+		if os.Getenv("S3_ENDPOINT") != "" {
+			publisher.TempDir = os.Getenv("MEDIA_TEMP_DIR")
+			publisher.Media = media.New(os.Getenv("S3_ENDPOINT"), os.Getenv("S3_BUCKET"),
+				os.Getenv("S3_ACCESS_KEY"), os.Getenv("S3_SECRET_KEY"), os.Getenv("MEDIA_TEMP_DIR"))
+		}
+		worker.publishers[model.TargetTelegram] = publisher
 	}
 	log.Println("News worker started")
 	worker.run(ctx)

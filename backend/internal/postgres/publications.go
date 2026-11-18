@@ -11,14 +11,14 @@ import (
 )
 
 const publicationColumns = `id, channel_id, event_id, version, target, destination, state,
-	priority, urgent, title, body, source_url, reason, external_id, last_error, created_at, expires_at, sent_at`
+	priority, urgent, title, body, source_url, reason, external_id, last_error, created_at, expires_at, sent_at, media`
 
 func scanPublication(row scanner) (model.Publication, error) {
 	var p model.Publication
 	var sentAt *time.Time
 	err := row.Scan(&p.ID, &p.ChannelID, &p.EventID, &p.Version, &p.Target, &p.Destination,
 		&p.State, &p.Priority, &p.Urgent, &p.Title, &p.Body, &p.SourceURL, &p.Reason, &p.ExternalID,
-		&p.LastError, &p.CreatedAt, &p.ExpiresAt, &sentAt)
+		&p.LastError, &p.CreatedAt, &p.ExpiresAt, &sentAt, &p.Media)
 	if sentAt != nil {
 		p.SentAt = *sentAt
 	}
@@ -47,6 +47,10 @@ func enqueuePublications(ctx context.Context, tx pgx.Tx, channel model.Channel, 
 		targets = append(targets, deliveryTarget{kind: model.TargetWebsite})
 	}
 	for _, target := range targets {
+		media := material.Media
+		if media == nil {
+			media = []model.Media{}
+		}
 		_, err := tx.Exec(ctx, `with previous as (
 			update publications set state = 'expired', last_error = 'superseded by a newer event version'
 			where event_id = $2 and target = $4 and destination = $5 and state in ('pending', 'review')
@@ -54,14 +58,14 @@ func enqueuePublications(ctx context.Context, tx pgx.Tx, channel model.Channel, 
 		)
 		insert into publications (
 			channel_id, event_id, version, target, destination, state, priority, urgent,
-			title, body, source_url, reason, created_at, expires_at
+			title, body, source_url, reason, created_at, expires_at, media
 		) values (
 			$1, $2, $3, $4, $5, $6,
 			greatest($7::integer, (select max(priority) from previous where expires_at > $13)),
 			$8::boolean or coalesce((select bool_or(urgent) from previous where expires_at > $13), false),
-			$9, $10, $11, $12, $13, $14
+			$9, $10, $11, $12, $13, $14, $15
 		)`, channel.ID, event.ID, event.Version, target.kind, target.destination, state, evaluation.Priority, evaluation.Urgent,
-			event.Title, event.Summary, material.URL, evaluation.Reason, now, expiresAt)
+			event.Title, event.Summary, material.URL, evaluation.Reason, now, expiresAt, media)
 		if err != nil {
 			return storeError(err)
 		}

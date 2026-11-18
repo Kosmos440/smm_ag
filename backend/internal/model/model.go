@@ -40,6 +40,7 @@ type Source struct {
 }
 
 type Material struct {
+	Media        []Media
 	ID           int64
 	SourceID     int64
 	ExternalID   string
@@ -50,6 +51,12 @@ type Material struct {
 	Primary      bool
 	PublishedAt  time.Time
 	FetchedAt    time.Time
+}
+
+// Media identifies an original attachment exposed by the source.
+type Media struct {
+	URL  string `json:"url"`
+	Kind string `json:"kind"`
 }
 
 type SourcedMaterial struct {
@@ -135,6 +142,9 @@ const (
 )
 
 type Publication struct {
+	Media       []Media          `json:"-"`
+	ChannelName string           `json:"-"`
+	ChannelURL  string           `json:"-"`
 	ID          int64            `json:"id"`
 	ChannelID   int64            `json:"channel_id"`
 	EventID     int64            `json:"event_id"`
