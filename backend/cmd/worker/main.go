@@ -5,17 +5,21 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"smmagent/internal/config"
+	"smmagent/internal/ingest"
 	"smmagent/internal/ingest/catalog"
+	ingestWebsite "smmagent/internal/ingest/website"
 	"smmagent/internal/media"
 	"smmagent/internal/model"
 	"smmagent/internal/postgres"
 	"smmagent/internal/publishing"
 	telegramPublisher "smmagent/internal/publishing/telegram"
 	websitePublisher "smmagent/internal/publishing/website"
+	"smmagent/internal/topic"
 )
 
 func main() {
@@ -42,8 +46,14 @@ func run() error {
 		return err
 	}
 
+	embeddings, llm, err := topic.ConfiguredProviders()
+	if err != nil {
+		return err
+	}
 	worker := scheduler{
 		store:           store,
+		classifier:      topic.Classifier{Store: store, Embeddings: embeddings, LLM: llm},
+		articleFetch:    ingestWebsite.New(ingest.NewPublicClient()).FetchArticle,
 		fetchers:        catalog.Fetchers(),
 		publishers:      map[model.Target]publishing.Publisher{model.TargetWebsite: websitePublisher.Publisher{}},
 		collectInterval: cfg.CollectInterval,
@@ -59,6 +69,9 @@ func run() error {
 		worker.publishers[model.TargetTelegram] = publisher
 	}
 	log.Println("News worker started")
+	var background sync.WaitGroup
+	background.Go(func() { worker.readArticles(ctx) })
 	worker.run(ctx)
+	background.Wait()
 	return nil
 }

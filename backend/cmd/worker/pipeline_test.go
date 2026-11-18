@@ -22,6 +22,7 @@ import (
 	"smmagent/internal/postgres"
 	"smmagent/internal/publishing"
 	"smmagent/internal/publishing/website"
+	"smmagent/internal/topic"
 )
 
 func TestWorkerPipeline(t *testing.T) {
@@ -81,6 +82,88 @@ func TestWorkerPipeline(t *testing.T) {
 	if err := json.Unmarshal(response, &feed); err != nil || len(feed.Items) != 2 ||
 		feed.Items[0].EventID != feed.Items[1].EventID || feed.Items[0].Version != 2 {
 		t.Fatalf("unexpected website feed: %s (%v)", response, err)
+	}
+}
+
+func TestTopicPipelineWaitsForSharedArticle(t *testing.T) {
+	store := pipelineStore(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+	source, err := store.CreateSource(ctx, model.Source{URL: "https://example.org/feed", Name: "Feed",
+		Organization: "Agency", Kind: model.SourceRSS, Status: model.SourceVerified, Primary: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var channelsToEvaluate []model.Channel
+	for _, name := range []string{"Новости", "Парламент"} {
+		channel, err := store.CreateChannel(ctx, model.Channel{Name: name, Website: true, Enabled: true,
+			Settings: model.Settings{Topic: "политика", Audience: "читатели", Keywords: []string{"госдума"}, MaxAgeMinutes: 60}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		channelsToEvaluate = append(channelsToEvaluate, channel)
+	}
+	material := model.Material{Title: "Депутаты обсудили проект",
+		URL: "https://example.org/story", FetchedAt: now, PublishedAt: now.Add(-time.Minute)}
+	if err := store.SaveMaterials(ctx, source.ID, []model.Material{material}); err != nil {
+		t.Fatal(err)
+	}
+	worker := scheduler{store: store, articleFetch: func(context.Context, model.Material) (model.Material, error) {
+		t.Fatal("evaluation must queue, rather than fetch, the article")
+		return model.Material{}, nil
+	}}
+	for _, channel := range channelsToEvaluate {
+		if err := worker.evaluate(ctx, channel, now); err != nil {
+			t.Fatal(err)
+		}
+		if records, err := store.ListTopics(ctx, channel.ID, 10, 0); err != nil || len(records) != 0 {
+			t.Fatalf("pending article evaluated: %v (%v)", records, err)
+		}
+	}
+	job, err := store.ClaimArticle(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lead := "В Госдуме обсудили проект об условиях участия граждан в работе местного самоуправления."
+	if err := store.FinishArticle(ctx, job, lead, lead, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, channel := range channelsToEvaluate {
+		if err := worker.evaluate(ctx, channel, now); err != nil {
+			t.Fatal(err)
+		}
+		records, err := store.ListTopics(ctx, channel.ID, 10, 0)
+		if err != nil || len(records) != 1 || records[0].Decision == nil ||
+			records[0].Decision.Method != "word_forms" || records[0].Decision.Verdict != model.TopicRelevant {
+			t.Fatalf("missing morphology decision: %+v (%v)", records, err)
+		}
+	}
+	channel := channelsToEvaluate[0]
+	handler := httpapi.New(channels.New(store).WithTopicPreview(func(_ context.Context, ch model.Channel, id int64) (model.TopicDecision, error) {
+		if ch.ID != channel.ID || id != job.Material.ID {
+			t.Fatal("preview received a different item")
+		}
+		return model.TopicDecision{Verdict: model.TopicIrrelevant, Method: "keywords", Reason: "preview",
+			ProfileVersion: topic.ProfileVersion(ch.Settings)}, nil
+	}), store.Ready)
+	path := fmt.Sprintf("/api/v1/channels/%d/topic-evaluations", channel.ID)
+	item := fmt.Sprintf("%s/%d", path, job.Material.ID)
+	requestJSON(t, handler, http.MethodPost, item+"/preview", "", http.StatusOK)
+	requestJSON(t, handler, http.MethodPut, item+"/review", `{"verdict":"insufficient"}`, http.StatusNoContent)
+	var result struct {
+		Items []model.TopicRecord `json:"items"`
+	}
+	if err := json.Unmarshal(requestJSON(t, handler, http.MethodGet, path, "", http.StatusOK), &result); err != nil {
+		t.Fatal(err)
+	}
+	record := result.Items[0]
+	if record.Decision.Verdict != model.TopicRelevant || record.Preview == nil || record.Preview.Verdict != model.TopicIrrelevant ||
+		record.Editor == nil || *record.Editor != model.TopicInsufficient {
+		t.Fatalf("preview and review not isolated: %+v", record)
+	}
+	posts, err := store.ListPublications(ctx, channel.ID, 10, 0)
+	if err != nil || len(posts) != 1 {
+		t.Fatalf("publication queue changed by historical review: %v (%v)", posts, err)
 	}
 }
 

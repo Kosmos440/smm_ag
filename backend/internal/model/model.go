@@ -65,18 +65,19 @@ type SourcedMaterial struct {
 }
 
 type Settings struct {
-	Topic               string   `json:"topic"`
-	Audience            string   `json:"audience"`
-	Keywords            []string `json:"keywords"`
-	BlockedTerms        []string `json:"blocked_terms"`
-	MaxAgeMinutes       int      `json:"max_age_minutes"`
-	ReserveAfterMinutes int      `json:"reserve_after_minutes"`
-	MinIntervalMinutes  int      `json:"min_interval_minutes"`
-	TimeZone            string   `json:"time_zone"`
-	QuietStartHour      *int     `json:"quiet_start_hour,omitempty"`
-	QuietEndHour        *int     `json:"quiet_end_hour,omitempty"`
-	UrgentOutsideHours  bool     `json:"urgent_outside_hours"`
-	RequireApproval     bool     `json:"require_approval"`
+	TopicProfile        *TopicProfile `json:"topic_profile,omitempty"`
+	Topic               string        `json:"topic"`
+	Audience            string        `json:"audience"`
+	Keywords            []string      `json:"keywords"`
+	BlockedTerms        []string      `json:"blocked_terms"`
+	MaxAgeMinutes       int           `json:"max_age_minutes"`
+	ReserveAfterMinutes int           `json:"reserve_after_minutes"`
+	MinIntervalMinutes  int           `json:"min_interval_minutes"`
+	TimeZone            string        `json:"time_zone"`
+	QuietStartHour      *int          `json:"quiet_start_hour,omitempty"`
+	QuietEndHour        *int          `json:"quiet_end_hour,omitempty"`
+	UrgentOutsideHours  bool          `json:"urgent_outside_hours"`
+	RequireApproval     bool          `json:"require_approval"`
 }
 
 type Channel struct {
@@ -113,6 +114,7 @@ type Event struct {
 }
 
 type Evaluation struct {
+	Topic    *TopicDecision
 	Event    Event
 	Accepted bool
 	Changed  bool

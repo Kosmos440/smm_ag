@@ -82,3 +82,6 @@ docker compose up -d --build media api worker
 Генерация ключей выполняется один раз. SMM_MEDIA_DIR по умолчанию D:/smm-agent-media. S3_BUCKET по умолчанию news-media. Worker использует S3_ENDPOINT=http://media:8333 и MEDIA_TEMP_DIR=/media-upload. S3_ACCESS_KEY и S3_SECRET_KEY обязательны для Compose. Порт S3 наружу не публикуется.
 
 Медиафайлы и временные загрузки находятся на D:. Служебные базы SeaweedFS расположены в Docker-томах media-master, media-filer и media-control, чтобы обойти ошибку rename Windows bind mount. Сохраняйте их вместе с каталогом objects при резервном копировании. Подробности хранения, ограничений и проверки приведены в [media.md](media.md).
+
+## Модели для определения темы
+Compose передаёт API и worker переменные TOPIC_EMBEDDINGS_URL, TOPIC_EMBEDDINGS_MODEL, TOPIC_EMBEDDINGS_API_KEY, TOPIC_LLM_URL, TOPIC_LLM_MODEL и TOPIC_LLM_API_KEY. Подключай только нужные провайдеры и пересоздавай контейнеры API и worker после изменения .env. Профили канала включают смысловые проверки отдельно. [Настройка и ограничения](topic-classification.md)

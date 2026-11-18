@@ -16,6 +16,19 @@ const settings = [
   ['quiet_end_hour', 'Конец тихих часов (0–23)', 'hour'],
   ['urgent_outside_hours', 'Срочные ночью', 'check'], ['require_approval', 'Требовать согласование', 'check'],
 ];
+const topicProfile = [
+  ['description', 'Редакционное описание темы', 'textarea'],
+  ['subtopics', 'Подтемы по строкам (название | ключи через запятую)', 'subtopics'],
+  ['context_terms', 'Контекстные слова через запятую', 'list'],
+  ['positive_examples', 'Примеры по теме, по одному на строку', 'lines'],
+  ['negative_examples', 'Примеры вне темы, по одному на строку', 'lines'],
+  ['use_vectors', 'Сравнивать по смыслу с помощью векторов', 'check'],
+  ['use_llm', 'Разбирать пограничные новости с LLM', 'check'],
+  ['vector_accept', 'Порог принятия от −1 до 1', 'threshold'],
+  ['vector_reject', 'Порог отклонения от −1 до 1', 'threshold'],
+];
+const verdicts = { relevant: 'По теме', irrelevant: 'Вне темы', insufficient: 'Нужен контекст' };
+const topicMethods = { rules: 'Правила', keywords: 'Ключи', word_forms: 'Словоформы', vectors: 'Векторы', llm: 'LLM' };
 const views = {
   sources: {
     title: 'Источники', description: 'Подключайте RSS, сайты и публичные каналы Telegram.',
@@ -70,7 +83,7 @@ async function api(path, method = 'GET', body) {
     const data = await response.json().catch(() => null);
     throw new Error(data?.error?.message || `Ошибка API (${response.status})`);
   }
-  return response.json();
+  return response.status === 204 ? null : response.json();
 }
 
 function node(tag, text, className) {
@@ -158,6 +171,7 @@ function row(item) {
     content.append(node('p', `${item.settings.topic} · ${item.settings.audience}`));
     if (section === 'channels') {
       content.append(node('span', item.enabled ? 'Включён' : 'Выключен', 'status'));
+      actions.append(button('Проверка темы', () => showTopics(item, 0)));
       for (const [path, title] of [['events', 'События'], ['publications', 'Публикации']]) {
         actions.append(button(title, async () => {
           const result = await api(`/api/v1/channels/${item.id}/${path}?limit=50`);
@@ -196,6 +210,46 @@ function row(item) {
   return element;
 }
 
+async function showTopics(channel, start) {
+  const path = `/api/v1/channels/${channel.id}/topic-evaluations`;
+  const result = await api(`${path}?limit=${pageSize}&offset=${start}`);
+  $('detail-title').textContent = `Проверка темы · ${channel.name}`;
+  const items = $('detail-items');
+  items.replaceChildren(...result.items.map((item) => {
+    const article = node('article');
+    article.append(node('h3', item.title));
+    const link = originLink(item.url);
+    if (link) article.append(link);
+    for (const [name, decision] of [['При сборе', item.decision], ['Повторная оценка', item.preview]]) {
+      if (!decision && name === 'Повторная оценка') continue;
+      const details = decision
+        ? [verdicts[decision.verdict], topicMethods[decision.method], decision.subtopic, decision.reason, decision.evidence,
+           decision.score?.toFixed(3)].filter(Boolean).join(' · ')
+        : 'Запись до введения классификатора';
+      article.append(node('p', `${name} · ${details}`));
+    }
+    if (item.editor_verdict) article.append(node('p', `Редактор · ${verdicts[item.editor_verdict]}`));
+    const actions = node('div', '', 'row-actions');
+    const route = `${path}/${item.material_id}`;
+    actions.append(button('Переоценить', async () => {
+      await api(`${route}/preview`, 'POST');
+      await showTopics(channel, start);
+    }));
+    for (const [verdict, title] of Object.entries(verdicts)) {
+      actions.append(button(title, async () => {
+        await api(`${route}/review`, 'PUT', { verdict });
+        await showTopics(channel, start);
+      }));
+    }
+    article.append(actions);
+    return article;
+  }));
+  if (!result.items.length) items.append(node('p', 'Оценок темы пока нет.'));
+  if (start > 0) items.append(button('Назад', () => showTopics(channel, start - pageSize)));
+  if (result.items.length === pageSize) items.append(button('Далее', () => showTopics(channel, start + pageSize)));
+  if (!$('details').open) $('details').showModal();
+}
+
 function showDetails(title, entries, empty) {
   $('detail-title').textContent = title;
   $('detail-items').replaceChildren(...(entries.length ? entries.map((item) => {
@@ -213,7 +267,8 @@ function showDetails(title, entries, empty) {
 function field(definition, values) {
   const [key, title, type, fallback] = definition;
   const wrapper = node('label');
-  const input = node(typeof type === 'object' ? 'select' : 'input');
+  const isTextarea = ['textarea', 'lines', 'subtopics'].includes(type);
+  const input = node(typeof type === 'object' ? 'select' : isTextarea ? 'textarea' : 'input');
   const value = values?.[key] ?? fallback ?? '';
   input.name = key;
   if (typeof type === 'object') {
@@ -223,17 +278,29 @@ function field(definition, values) {
     input.type = 'checkbox';
     input.checked = Boolean(value);
     wrapper.className = 'check';
+  } else if (isTextarea) {
+    wrapper.className = 'wide';
+    input.rows = type === 'textarea' ? 2 : 3;
+    input.value = profileText(type, value);
   } else {
-    input.type = type === 'hour' ? 'number' : ['number', 'url'].includes(type) ? type : 'text';
+    input.type = ['hour', 'threshold'].includes(type) ? 'number' : ['number', 'url'].includes(type) ? type : 'text';
     input.required = ['required', 'url', 'number'].includes(type);
     input.value = Array.isArray(value) ? value.join(', ') : value;
     if (input.type === 'number') input.min = 0;
     if (type === 'hour') input.max = 23;
+    if (type === 'threshold') { input.min = -1; input.max = 1; input.step = 'any'; }
   }
   if (type === 'url') wrapper.className = 'wide';
   if (type === 'check') wrapper.append(input, node('span', title));
   else wrapper.append(node('span', title), input);
   return wrapper;
+}
+
+function profileText(type, value) {
+  if (type === 'subtopics') return (value || []).map(({name, keywords}) =>
+    `${name}${keywords?.length ? ' | ' + keywords.join(', ') : ''}`).join('\n');
+  if (type === 'lines') return (value || []).join('\n');
+  return value;
 }
 
 function openEditor(item) {
@@ -244,6 +311,7 @@ function openEditor(item) {
   $('fields').replaceChildren(...view.fields.map((def) => field(def, item)));
   if (view.settings) {
     $('fields').append(...view.settings.map((def) => field(def, item?.settings)));
+    $('fields').append(...topicProfile.map((def) => field(def, item?.settings?.topic_profile)));
     const controls = node('div', '', 'filter-actions');
     controls.append(field(['filter_exclusions', 'Какие темы исключить', 'text']));
     controls.append(button('Подобрать фильтры с ИИ', suggestFilters));
@@ -262,15 +330,24 @@ async function suggestFilters() {
   const blocked = inputs.namedItem('blocked_terms');
   const priorKeywords = keywords.value;
   const priorBlocked = blocked.value;
+  const draftFields = topicProfile.filter(([, , type]) => !['threshold', 'check'].includes(type));
+  const priorProfile = JSON.stringify(readFields(draftFields));
   $('form-error').hidden = true;
   try {
     const result = await api('/api/v1/filter-suggestions', 'POST', { topic, audience, exclusions });
     if (editing !== active || !$('editor').open) return;
     if (topic !== inputs.namedItem('topic').value.trim() || audience !== inputs.namedItem('audience').value.trim() ||
         exclusions !== inputs.namedItem('filter_exclusions').value.trim() ||
-        priorKeywords !== keywords.value || priorBlocked !== blocked.value) return;
+        priorKeywords !== keywords.value || priorBlocked !== blocked.value ||
+        priorProfile !== JSON.stringify(readFields(draftFields))) return;
     keywords.value = result.keywords.join(', ');
     if (exclusions) blocked.value = result.blocked_terms.join(', ');
+    if (result.topic_profile) {
+      for (const [key, , type] of draftFields) {
+        const value = result.topic_profile[key] || '';
+        inputs.namedItem(key).value = type === 'list' ? (value || []).join(', ') : profileText(type, value);
+      }
+    }
     keywords.focus();
   } catch (error) {
     if (editing === active && $('editor').open) {
@@ -286,7 +363,13 @@ function readFields(definitions) {
     const input = $('form').elements.namedItem(key);
     if (type === 'check') values[key] = input.checked;
     else if (type === 'list') values[key] = input.value.split(',').map((term) => term.trim()).filter(Boolean);
-    else if (type === 'number' || type === 'hour') {
+    else if (type === 'lines' || type === 'subtopics') {
+      const lines = input.value.split('\n').map((line) => line.trim()).filter(Boolean);
+      values[key] = type === 'lines' ? lines : lines.map((line) => {
+        const [name, ...parts] = line.split('|');
+        return {name: name.trim(), keywords: parts.join('|').split(',').map((word) => word.trim()).filter(Boolean)};
+      });
+    } else if (type === 'number' || type === 'hour' || type === 'threshold') {
       if (input.value !== '') values[key] = input.valueAsNumber;
     } else values[key] = input.value.trim();
   }
@@ -298,7 +381,13 @@ $('form').addEventListener('submit', async (event) => {
   const { section: key, item } = editing;
   const view = views[key];
   const payload = readFields(view.fields);
-  if (view.settings) payload.settings = readFields(view.settings);
+  if (view.settings) {
+    payload.settings = readFields(view.settings);
+    const profile = readFields(topicProfile);
+    if (Object.values(profile).some((value) => Array.isArray(value) ? value.length : value !== '' && value !== false)) {
+      payload.settings.topic_profile = profile;
+    }
+  }
   const submit = event.submitter;
   if (!submit || submit.disabled) return;
   submit.disabled = true;

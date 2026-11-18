@@ -101,6 +101,58 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/PublicationList'}
         default: {$ref: '#/components/responses/Error'}
+  /api/v1/channels/{id}/topic-evaluations:
+    get:
+      operationId: listTopicEvaluations
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Original decisions, historical previews and editorial labels
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - properties:
+                      items:
+                        type: array
+                        items: {$ref: '#/components/schemas/TopicRecord'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/channels/{id}/topic-evaluations/{materialID}/preview:
+    post:
+      operationId: previewTopicEvaluation
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/MaterialID'
+      responses:
+        '200':
+          description: Historical evaluation with the current profile and saved article text
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TopicDecision'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/channels/{id}/topic-evaluations/{materialID}/review:
+    put:
+      operationId: reviewTopicEvaluation
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - $ref: '#/components/parameters/MaterialID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [verdict]
+              properties:
+                verdict: {$ref: '#/components/schemas/TopicVerdict'}
+      responses:
+        '204': {description: Editorial label saved}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/filter-suggestions:
     post:
       operationId: suggestFilters
@@ -131,6 +183,7 @@ paths:
                   blocked_terms:
                     type: array
                     items: {type: string}
+                  topic_profile: {$ref: '#/components/schemas/TopicProfile'}
         '400':
           $ref: '#/components/responses/Error'
         '502':
@@ -301,6 +354,11 @@ paths:
         default: {$ref: '#/components/responses/Error'}
 components:
   parameters:
+    MaterialID:
+      name: materialID
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/ID'}
     ID:
       name: id
       in: path
@@ -374,12 +432,70 @@ components:
       type: array
       maxItems: 50
       items: {type: string, minLength: 1, maxLength: 100}
+    TopicProfile:
+      type: object
+      additionalProperties: false
+      properties:
+        description: {type: string, maxLength: 1000}
+        subtopics:
+          type: array
+          maxItems: 16
+          items:
+            type: object
+            additionalProperties: false
+            required: [name]
+            properties:
+              name: {type: string, minLength: 1, maxLength: 100}
+              keywords:
+                type: array
+                maxItems: 15
+                items: {type: string, minLength: 1, maxLength: 100}
+        context_terms: {$ref: '#/components/schemas/Terms'}
+        positive_examples: {$ref: '#/components/schemas/TopicExamples'}
+        negative_examples: {$ref: '#/components/schemas/TopicExamples'}
+        use_vectors: {type: boolean, default: false}
+        use_llm: {type: boolean, default: false}
+        vector_accept: {type: number, minimum: -1, maximum: 1}
+        vector_reject: {type: number, minimum: -1, maximum: 1}
+    TopicExamples:
+      type: array
+      maxItems: 12
+      items: {type: string, minLength: 1, maxLength: 500}
+    TopicVerdict:
+      type: string
+      enum: [relevant, irrelevant, insufficient]
+    TopicDecision:
+      type: object
+      required: [verdict, method, reason, profile_version]
+      properties:
+        verdict: {$ref: '#/components/schemas/TopicVerdict'}
+        method: {type: string, enum: [rules, keywords, word_forms, vectors, llm]}
+        reason: {type: string}
+        evidence: {type: string}
+        subtopic: {type: string}
+        score: {type: number, minimum: -1, maximum: 1}
+        profile_version: {type: string}
+    TopicRecord:
+      type: object
+      required: [material_id, title, url, decision, preview, editor_verdict, evaluated_at]
+      properties:
+        material_id: {$ref: '#/components/schemas/ID'}
+        title: {type: string}
+        url: {type: string, format: uri}
+        decision:
+          anyOf: [{$ref: '#/components/schemas/TopicDecision'}, {type: 'null'}]
+        preview:
+          anyOf: [{$ref: '#/components/schemas/TopicDecision'}, {type: 'null'}]
+        editor_verdict:
+          anyOf: [{$ref: '#/components/schemas/TopicVerdict'}, {type: 'null'}]
+        evaluated_at: {type: string, format: date-time}
     Settings:
       type: object
       additionalProperties: false
       required: [topic, audience]
       properties:
         topic: {type: string, minLength: 1, maxLength: 200}
+        topic_profile: {$ref: '#/components/schemas/TopicProfile'}
         audience: {type: string, minLength: 1, maxLength: 300}
         keywords: {$ref: '#/components/schemas/Terms'}
         blocked_terms: {$ref: '#/components/schemas/Terms'}

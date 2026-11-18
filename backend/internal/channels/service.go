@@ -18,6 +18,7 @@ type Queries interface {
 	ListPresets(context.Context, int, int) ([]model.Preset, error)
 	GetPreset(context.Context, int64) (model.Preset, error)
 	ListEvents(context.Context, int64, int, int) ([]model.Event, error)
+	ListTopics(context.Context, int64, int, int) ([]model.TopicRecord, error)
 	ListPublications(context.Context, int64, int, int) ([]model.Publication, error)
 	ListReview(context.Context, int, int) ([]model.Publication, error)
 	ListSiteNews(context.Context, int64, int, int) ([]model.Publication, error)
@@ -32,6 +33,8 @@ type Store interface {
 	CreatePreset(context.Context, model.Preset) (model.Preset, error)
 	UpdatePreset(context.Context, int64, model.Preset) (model.Preset, error)
 	DecideReview(context.Context, int64, bool) (model.Publication, error)
+	ReviewTopic(context.Context, int64, int64, model.TopicVerdict) error
+	SaveTopicPreview(context.Context, int64, int64, model.TopicDecision) error
 }
 
 type Service struct {
@@ -39,6 +42,7 @@ type Service struct {
 	store           Store
 	probe           SourceProbe
 	generateFilters FilterGenerator
+	previewTopic    TopicPreview
 }
 
 func New(store Store) *Service {

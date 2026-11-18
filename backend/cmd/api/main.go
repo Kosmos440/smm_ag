@@ -15,7 +15,9 @@ import (
 	"smmagent/internal/httpapi"
 	"smmagent/internal/ingest/catalog"
 	"smmagent/internal/model"
+	"smmagent/internal/news"
 	"smmagent/internal/postgres"
+	"smmagent/internal/topic"
 )
 
 func main() {
@@ -49,6 +51,34 @@ func run() error {
 			return nil, errors.New("unsupported source kind")
 		}
 		return fetcher.Fetch(ctx, source)
+	})
+	embeddings, llm, err := topic.ConfiguredProviders()
+	if err != nil {
+		return err
+	}
+	classifier := topic.Classifier{Store: store, Embeddings: embeddings, LLM: llm}
+	service = service.WithTopicPreview(func(ctx context.Context, channel model.Channel, id int64) (model.TopicDecision, error) {
+		material, err := store.TopicMaterial(ctx, channel.ID, id)
+		if err != nil {
+			return model.TopicDecision{}, err
+		}
+		article, err := store.Article(ctx, id)
+		if err != nil {
+			return model.TopicDecision{}, err
+		}
+		blocked := news.TopicBlocked(material, channel.Settings)
+		if article.State == "ready" {
+			material.Body = article.Body
+		}
+		if blocked || news.TopicBlocked(material, channel.Settings) {
+			return model.TopicDecision{Verdict: model.TopicIrrelevant, Method: "rules",
+				Reason: "запрещённая тема", ProfileVersion: topic.ProfileVersion(channel.Settings)}, nil
+		}
+		decision, err := classifier.Match(ctx, material, article.Lead, channel.Settings)
+		if err != nil {
+			return model.TopicDecision{}, err
+		}
+		return classifier.Resolve(ctx, material, channel.Settings, decision), nil
 	})
 	if endpoint := os.Getenv("LLM_FILTERS_URL"); endpoint != "" {
 		generate, err := channels.ChatFilterGenerator(endpoint, os.Getenv("LLM_FILTERS_MODEL"), os.Getenv("LLM_FILTERS_API_KEY"))

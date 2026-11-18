@@ -1,6 +1,8 @@
 package website
 
 import (
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -9,6 +11,28 @@ import (
 	"smmagent/internal/ingest"
 	"smmagent/internal/model"
 )
+
+type articleTransport func(*http.Request) (*http.Response, error)
+
+func (f articleTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestFetchRSSArticleUsesFeedDateAndChecksHeading(t *testing.T) {
+	raw := `<html><head><meta property="og:type" content="article"><meta property="og:title" content="Депутаты обсудили проект"></head>
+	<body><main><article><h1>Депутаты обсудили проект</h1><p>В Госдуме обсудили проект об условиях участия граждан в работе местного самоуправления.</p></article></main></body></html>`
+	collector := New(&http.Client{Transport: articleTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Request: r, Header: http.Header{"Content-Type": {"text/html; charset=utf-8"}},
+			Body: io.NopCloser(strings.NewReader(raw))}, nil
+	})})
+	item := model.Material{URL: "https://example.org/story", Title: "Депутаты обсудили проект", PublishedAt: time.Now()}
+	article, err := collector.FetchArticle(t.Context(), item)
+	if err != nil || !article.PublishedAt.Equal(item.PublishedAt) || !strings.Contains(article.Body, "В Госдуме") {
+		t.Fatalf("article fallback: %+v (%v)", article, err)
+	}
+	item.Title = "Погода на завтра"
+	if _, err := collector.FetchArticle(t.Context(), item); err == nil {
+		t.Fatal("accepted an unrelated page")
+	}
+}
 
 func TestListAndArticleExtraction(t *testing.T) {
 	base := &url.URL{Scheme: "https", Host: "example.org", Path: "/news"}
