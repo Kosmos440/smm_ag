@@ -18,18 +18,24 @@ func (c Classifier) Resolve(ctx context.Context, item model.Material, settings m
 		return decision
 	}
 	profile := settings.TopicProfile
+	useVectors := profile.VectorsEnabled() && c.Embeddings != nil
+	useLLM := profile.LLMEnabled() && c.LLM != nil
 	if Short(item) {
 		decision.Reason = "недостаточно текста для определения темы"
 		return decision
 	}
-	if profile == nil || !profile.UseVectors && !profile.UseLLM {
+	if !useVectors && !useLLM {
 		if decision.Evidence == "" {
 			decision.Verdict = model.TopicIrrelevant
 			decision.Reason = "материал не соответствует теме"
 		}
 		return decision
 	}
-	if profile.UseVectors && c.Embeddings != nil {
+	if profile == nil {
+		profile = &model.TopicProfile{}
+		settings.TopicProfile = profile
+	}
+	if useVectors {
 		scored, err := c.vectorDecision(ctx, item, settings, *profile, decision)
 		if err == nil {
 			decision = scored
@@ -40,14 +46,7 @@ func (c Classifier) Resolve(ctx context.Context, item model.Material, settings m
 			decision.Reason = "векторная оценка недоступна"
 		}
 	}
-	if profile.UseVectors && c.Embeddings == nil {
-		decision.Reason = "провайдер эмбеддингов не настроен"
-	}
-	if !profile.UseLLM {
-		return decision
-	}
-	if c.LLM == nil {
-		decision.Reason = "провайдер LLM не настроен"
+	if !useLLM {
 		return decision
 	}
 	judged, err := c.LLM.judge(ctx, item, settings, decision)

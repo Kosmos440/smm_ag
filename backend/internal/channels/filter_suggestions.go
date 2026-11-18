@@ -62,7 +62,7 @@ func (s *Service) SuggestFilters(ctx context.Context, input FilterRequest) (Filt
 		return FilterSuggestion{}, ErrFilterGenerationFailed
 	}
 	if result.TopicProfile != nil {
-		result.TopicProfile.UseVectors, result.TopicProfile.UseLLM = false, false
+		result.TopicProfile.UseVectors, result.TopicProfile.UseLLM = nil, nil
 		result.TopicProfile.VectorAccept, result.TopicProfile.VectorReject = nil, nil
 		if normalizeProfile(result.TopicProfile) != nil {
 			return FilterSuggestion{}, ErrFilterGenerationFailed

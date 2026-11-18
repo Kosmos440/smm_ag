@@ -453,8 +453,8 @@ components:
         context_terms: {$ref: '#/components/schemas/Terms'}
         positive_examples: {$ref: '#/components/schemas/TopicExamples'}
         negative_examples: {$ref: '#/components/schemas/TopicExamples'}
-        use_vectors: {type: boolean, default: false}
-        use_llm: {type: boolean, default: false}
+        use_vectors: {type: boolean, default: true, description: Requires a configured embedding provider}
+        use_llm: {type: boolean, default: true, description: Requires a configured LLM provider}
         vector_accept: {type: number, minimum: -1, maximum: 1}
         vector_reject: {type: number, minimum: -1, maximum: 1}
     TopicExamples:

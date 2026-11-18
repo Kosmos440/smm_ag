@@ -22,8 +22,8 @@ const topicProfile = [
   ['context_terms', 'Контекстные слова через запятую', 'list'],
   ['positive_examples', 'Примеры по теме, по одному на строку', 'lines'],
   ['negative_examples', 'Примеры вне темы, по одному на строку', 'lines'],
-  ['use_vectors', 'Сравнивать по смыслу с помощью векторов', 'check'],
-  ['use_llm', 'Разбирать пограничные новости с LLM', 'check'],
+  ['use_vectors', 'Использовать векторы', 'check', true],
+  ['use_llm', 'Использовать LLM', 'check', true],
   ['vector_accept', 'Порог принятия от −1 до 1', 'threshold'],
   ['vector_reject', 'Порог отклонения от −1 до 1', 'threshold'],
 ];
@@ -171,7 +171,8 @@ function row(item) {
     content.append(node('p', `${item.settings.topic} · ${item.settings.audience}`));
     if (section === 'channels') {
       content.append(node('span', item.enabled ? 'Включён' : 'Выключен', 'status'));
-      actions.append(button('Проверка темы', () => showTopics(item, 0)));
+      actions.append(button('Проверка темы', () => showTopics(item, 0)),
+        button('LLM и векторы', () => openEditor(item, 'use_vectors')));
       for (const [path, title] of [['events', 'События'], ['publications', 'Публикации']]) {
         actions.append(button(title, async () => {
           const result = await api(`/api/v1/channels/${item.id}/${path}?limit=50`);
@@ -303,7 +304,7 @@ function profileText(type, value) {
   return value;
 }
 
-function openEditor(item) {
+function openEditor(item, focusField) {
   const view = views[section];
   editing = { section, item };
   $('form-title').textContent = item ? `Изменить · ${item.name}` : view.create;
@@ -318,6 +319,7 @@ function openEditor(item) {
     $('fields').append(controls);
   }
   $('editor').showModal();
+  if (focusField) $('form').elements.namedItem(focusField).focus();
 }
 
 async function suggestFilters() {
@@ -383,10 +385,7 @@ $('form').addEventListener('submit', async (event) => {
   const payload = readFields(view.fields);
   if (view.settings) {
     payload.settings = readFields(view.settings);
-    const profile = readFields(topicProfile);
-    if (Object.values(profile).some((value) => Array.isArray(value) ? value.length : value !== '' && value !== false)) {
-      payload.settings.topic_profile = profile;
-    }
+    payload.settings.topic_profile = readFields(topicProfile);
   }
   const submit = event.submitter;
   if (!submit || submit.disabled) return;

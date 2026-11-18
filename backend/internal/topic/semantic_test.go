@@ -62,7 +62,7 @@ func TestSemanticRoutesAndCaches(t *testing.T) {
 	}
 	c := Classifier{Store: cache{values: map[string][]float32{}},
 		Embeddings: provider("/embeddings", "multilingual-e5-base"), LLM: provider("/chat", "fixture")}
-	profile := &model.TopicProfile{UseVectors: true, UseLLM: true, Subtopics: []model.Subtopic{{Name: "Работа парламента"}}}
+	profile := &model.TopicProfile{Subtopics: []model.Subtopic{{Name: "Работа парламента"}}}
 	settings := model.Settings{Topic: "Политика", TopicProfile: profile}
 	initial := model.TopicDecision{Verdict: model.TopicInsufficient}
 	got := c.Resolve(t.Context(), material, settings, initial)
@@ -78,5 +78,11 @@ func TestSemanticRoutesAndCaches(t *testing.T) {
 	got = c.Resolve(t.Context(), material, settings, initial)
 	if got.Verdict != model.TopicRelevant || got.Method != "vectors" || llmRequests != 2 {
 		t.Fatalf("calibrated vector threshold did not resolve: %+v", got)
+	}
+	disabled := false
+	profile.UseVectors, profile.UseLLM = &disabled, &disabled
+	got = c.Resolve(t.Context(), material, settings, initial)
+	if got.Verdict != model.TopicIrrelevant || embeddingRequests != 1 || llmRequests != 2 {
+		t.Fatalf("disabled methods were used: %+v, embedding=%d, LLM=%d", got, embeddingRequests, llmRequests)
 	}
 }

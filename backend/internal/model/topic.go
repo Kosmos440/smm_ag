@@ -8,10 +8,18 @@ type TopicProfile struct {
 	ContextTerms     []string   `json:"context_terms,omitempty"`
 	PositiveExamples []string   `json:"positive_examples,omitempty"`
 	NegativeExamples []string   `json:"negative_examples,omitempty"`
-	UseVectors       bool       `json:"use_vectors,omitempty"`
-	UseLLM           bool       `json:"use_llm,omitempty"`
+	UseVectors       *bool      `json:"use_vectors,omitempty"`
+	UseLLM           *bool      `json:"use_llm,omitempty"`
 	VectorAccept     *float64   `json:"vector_accept,omitempty"`
 	VectorReject     *float64   `json:"vector_reject,omitempty"`
+}
+
+func (p *TopicProfile) VectorsEnabled() bool {
+	return p == nil || p.UseVectors == nil || *p.UseVectors
+}
+
+func (p *TopicProfile) LLMEnabled() bool {
+	return p == nil || p.UseLLM == nil || *p.UseLLM
 }
 
 type Subtopic struct {

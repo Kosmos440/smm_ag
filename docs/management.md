@@ -50,4 +50,6 @@
 
 ## Проверка темы
 Настройки канала и пресета принимают необязательное settings.topic_profile. POST /api/v1/filter-suggestions может вернуть черновик topic_profile.
+
+В строке канала кнопка «LLM и векторы» открывает переключатели. Оба включены по умолчанию. Для работы каждого требуется настроенный провайдер. Выключение сохраняется в профиле явно.
 GET /api/v1/channels/{id}/topic-evaluations возвращает историю с limit и offset. POST /api/v1/channels/{id}/topic-evaluations/{materialID}/preview оценивает сохранённый текст по текущему профилю. PUT /api/v1/channels/{id}/topic-evaluations/{materialID}/review сохраняет verdict со значением relevant, irrelevant или insufficient и возвращает 204. В панели функции находятся в «Каналы → Проверка темы». [Подробности](topic-classification.md)
