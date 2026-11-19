@@ -8,6 +8,29 @@ import (
 	"smmagent/internal/model"
 )
 
+func TestUrgentBypassesVariableReserveWindow(t *testing.T) {
+	settings := model.Settings{MinIntervalMinutes: 10, MaxIntervalMinutes: 25, ReserveAfterMinutes: 1}
+	last := time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC)
+	gaps := map[int]bool{}
+	for i := 0; i < 64; i++ {
+		last = last.Add(time.Second)
+		opened := false
+		for m := 0; m <= 25; m++ {
+			urgent, reserve := Window(settings, last.Add(time.Duration(m)*time.Minute), last)
+			if !urgent || (reserve && m < 10) || (!reserve && (opened || m == 25)) {
+				t.Fatalf("invalid window at minute %d after %v", m, last)
+			}
+			if reserve && !opened {
+				gaps[m] = true
+			}
+			opened = reserve
+		}
+	}
+	if len(gaps) < 2 {
+		t.Fatal("expected varying gaps across deliveries")
+	}
+}
+
 func TestWindowQuietHoursAndReserve(t *testing.T) {
 	start, end := 23, 7
 	settings := model.Settings{

@@ -156,6 +156,9 @@ func normalizeSettings(s *model.Settings) error {
 	if s.MinIntervalMinutes < 0 || s.MinIntervalMinutes > minutesInWeek {
 		return invalid("settings.min_interval_minutes", "must be between 0 and 10080")
 	}
+	if s.MaxIntervalMinutes != 0 && (s.MinIntervalMinutes < 1 || s.MaxIntervalMinutes < s.MinIntervalMinutes || s.MaxIntervalMinutes > minutesInWeek) {
+		return invalid("settings.max_interval_minutes", "requires 1 <= min_interval_minutes <= max_interval_minutes <= 10080")
+	}
 	if (s.QuietStartHour == nil) != (s.QuietEndHour == nil) {
 		return invalid("settings quiet hours", "must include both quiet_start_hour and quiet_end_hour")
 	}

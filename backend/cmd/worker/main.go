@@ -46,6 +46,9 @@ func run() error {
 		return err
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "events-replay" {
+		return replayEventCatalog(ctx, store, os.Args[2:])
+	}
 	embeddings, llm, err := topic.ConfiguredProviders()
 	if err != nil {
 		return err
@@ -71,6 +74,9 @@ func run() error {
 	log.Println("News worker started")
 	var background sync.WaitGroup
 	background.Go(func() { worker.readArticles(ctx) })
+	if os.Getenv("EVENT_CATALOG_SHADOW") == "1" {
+		background.Go(func() { followEventCatalog(ctx, store, cfg.CollectInterval) })
+	}
 	worker.run(ctx)
 	background.Wait()
 	return nil

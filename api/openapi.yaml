@@ -512,6 +512,12 @@ components:
           default: 30
           description: Zero selects the default
         min_interval_minutes: {type: integer, minimum: 0, maximum: 10080, default: 0}
+        max_interval_minutes:
+          type: integer
+          minimum: 0
+          maximum: 10080
+          default: 0
+          description: When positive, choose a gap for regular posts between min_interval_minutes (at least 1) and this inclusive maximum, per destination. Urgent posts and updates to an event already sent to the destination bypass the gap.
         time_zone: {type: string, default: UTC, example: Europe/Moscow}
         quiet_start_hour: {type: [integer, 'null'], minimum: 0, maximum: 23}
         quiet_end_hour: {type: [integer, 'null'], minimum: 0, maximum: 23}

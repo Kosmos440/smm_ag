@@ -56,6 +56,10 @@ func EvaluateRelevant(material model.Material, source model.Source, settings mod
 	if organization == "" {
 		organization = material.Organization
 	}
+	if meeting, milestone := trilateralReport(material.Title, material.Body); meeting {
+		event, found := recentTrilateralEvent(candidates, now)
+		return evaluateTrilateral(material, organization, milestone, event, found, now)
+	}
 	facts := extractFacts(text, material.URL, organization)
 	event, found := matchEvent(material, facts, candidates)
 	if !source.Primary && needsPrimary(normalized, facts) {

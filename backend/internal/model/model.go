@@ -73,6 +73,7 @@ type Settings struct {
 	MaxAgeMinutes       int           `json:"max_age_minutes"`
 	ReserveAfterMinutes int           `json:"reserve_after_minutes"`
 	MinIntervalMinutes  int           `json:"min_interval_minutes"`
+	MaxIntervalMinutes  int           `json:"max_interval_minutes,omitempty"`
 	TimeZone            string        `json:"time_zone"`
 	QuietStartHour      *int          `json:"quiet_start_hour,omitempty"`
 	QuietEndHour        *int          `json:"quiet_end_hour,omitempty"`

@@ -28,3 +28,13 @@ backend/internal/media отвечает за ограниченное скачи
 
 ## Классификация темы
 backend/internal/topic реализует ключи, векторы и LLM. backend/internal/postgres/topics.go отвечает за словоформы, очередь, кеш и историю оценок. backend/cmd/worker/topics.go читает статьи и соединяет классификатор с очередью событий. backend/internal/httpapi/topics.go обслуживает историю и редакторскую оценку. [Поток данных](topic-classification.md)
+
+## Общий каталог событий
+
+- [Алгоритм сопоставления](../backend/internal/news/catalog.go) сравнивает словоформы заголовка, юрисдикцию и стадию чтения.
+- [Хранилище каталога](../backend/internal/postgres/event_catalog.go) читает сохранённые оценки и записывает события, версии и связи с материалами.
+- [Команды worker](../backend/cmd/worker/event_catalog.go) запускают архивный прогон и фоновое пополнение каталога. [Поток данных](event-catalog.md)
+
+## Локальная LLM
+
+Сервис `llm` в [Compose](../compose.yaml) запускает llama.cpp в дополнительном профиле `llm-local`. API и worker обращаются к нему через существующие клиенты Chat Completions. [Настройка](topic-classification.md#локальная-llm-в-compose)

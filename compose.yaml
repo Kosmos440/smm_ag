@@ -18,6 +18,19 @@ x-topic-providers: &topic-providers
   TOPIC_LLM_API_KEY: ${TOPIC_LLM_API_KEY:-}
 
 services:
+  llm:
+    profiles: ["llm-local"]
+    image: ghcr.io/ggml-org/llama.cpp:server@sha256:5b43086e3ba7ea5794d72904654f6cd41224a9b1c6ac0398f4940ee380d30f23
+    command: ["--model", "/models/qwen3-4b-instruct-q4_k_m.gguf", "--alias", "qwen3-4b-instruct", "--host", "0.0.0.0", "--port", "8080", "--ctx-size", "8192", "--parallel", "1", "--threads", "6"]
+    volumes:
+      - type: bind
+        source: ${SMM_LLM_DIR:-D:/smm-agent-models}
+        target: /models
+        read_only: true
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+
   media:
     image: chrislusf/seaweedfs:4.52
     entrypoint: ["/usr/bin/weed"]
@@ -89,6 +102,7 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       COLLECT_INTERVAL: ${COLLECT_INTERVAL:-2m}
       WORKER_TICK_INTERVAL: ${WORKER_TICK_INTERVAL:-5s}
+      EVENT_CATALOG_SHADOW: ${EVENT_CATALOG_SHADOW:-0}
 
   integration:
     profiles: ["test"]

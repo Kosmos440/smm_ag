@@ -41,6 +41,44 @@ flowchart LR
 
 Для проверки локального стенда достаточно ключей и дочитывания. Чтобы включить вызовы моделей, настрой провайдеры в `.env` и пересоздай контейнеры API и worker. Внешнему провайдеру передаются заголовок и фрагмент статьи, а также необходимые для оценки части редакционного профиля.
 
+## Локальная LLM в Compose
+
+Профиль `llm-local` запускает llama.cpp с Qwen3 4B Instruct 2507 в формате GGUF Q4_K_M. Сервис доступен другим контейнерам как `http://llm:8080/v1/chat/completions`. На хост порт не публикуется.
+
+Сохраните веса из публичного [реестра Ollama](https://ollama.com/library/qwen3:4b-instruct-2507-q4_K_M) в `D:/smm-agent-models/qwen3-4b-instruct-q4_k_m.gguf`. Сверьте SHA-256 `85e4a5b7b8ef0e48af0e8658f5aaab9c2324c76c1641493f4d1e25fce54b18b9`. Для другого каталога задайте `SMM_LLM_DIR`.
+
+В `.env` задайте параметры двух существующих клиентов:
+
+```dotenv
+TOPIC_LLM_URL=http://llm:8080/v1/chat/completions
+TOPIC_LLM_MODEL=qwen3-4b-instruct
+LLM_FILTERS_URL=http://llm:8080/v1/chat/completions
+LLM_FILTERS_MODEL=qwen3-4b-instruct
+```
+
+Запустите провайдер командой `docker compose --profile llm-local up -d llm`. Когда журнал `docker compose --profile llm-local logs --tail=30 llm` покажет готовность, примените настройки клиентов командой `docker compose --profile llm-local up -d api worker`. Для диагностики смотрите метод и причину решения в «Каналы → Проверка темы».
+
+### NVIDIA CUDA в Docker Desktop
+
+На стенде с RTX 3070 используйте [дополнение Compose](../compose.llm-cuda.yaml). Оно выполняет официальную Linux-сборку llama.cpp b12208 с CUDA 12.8. Базовый образ предоставляет системные библиотеки. CUDA-бинарники и веса читаются с диска D. Для Docker Desktop нужен Linux-бэкенд с доступом к NVIDIA GPU.
+
+Из [релиза b12208](https://github.com/ggml-org/llama.cpp/releases/tag/b12208) скачайте два архива и распакуйте каждый в свою папку внутри `SMM_LLM_DIR/cuda-b12208`:
+
+| Архив | Папка распаковки | SHA-256 |
+| --- | --- | --- |
+| `llama-b12208-bin-ubuntu-cuda-12.8-x64.tar.gz` | `server` | `be560d1ba7f73e056502d01b6a2701d8d1bb9ca7369c3140a0270f3f07c94436` |
+| `cudart-llama-b12208-bin-ubuntu-cuda-12.8-x64.tar.gz` | `libraries` | `77fe809b3c4c1f35b43f4ce460b10280a9e6ae155f85fc2c82b1debbd0e51688` |
+
+В первой папке нужен `llama-b12208/llama-server`, во второй — `cudart-llama-b12208-bin-ubuntu-cuda-12.8-x64/libcudart.so.12`. При распаковке Windows может пропустить Linux-симлинки к библиотекам. Контейнер создаёт нужные ссылки во временной файловой системе при запуске.
+
+```powershell
+docker compose -f compose.yaml -f compose.llm-cuda.yaml --profile llm-local up -d llm api worker
+```
+
+Для последующих запусков всех сервисов используйте те же два файла Compose, чтобы сохранить конфигурацию GPU. При запросе оценки worker по-прежнему применяет свой тайм-аут и проверяет цитату. В архивной проверке результат с методом `llm` подтверждает, что ответ модели прошёл проверку.
+
+На Windows файлы и профиль можно закрепить в локальном `.env` через `COMPOSE_FILE=compose.yaml;compose.llm-cuda.yaml` и `COMPOSE_PROFILES=llm-local`. Тогда обычный `docker compose up -d` использует GPU-профиль.
+
 ## История оценок
 
 «Каналы → Проверка темы» показывает последнее рабочее решение, сохранённую повторную оценку и метку редактора. «Переоценить» применяет текущий профиль к сохранённому тексту. Если статья уже была дочитана, используется также её текст. Исторический просмотр проверяет тему и стоп-фразы независимо от возраста новости. Повторные оценки и редакторские метки хранятся отдельно от рабочего решения и очереди выпуска.

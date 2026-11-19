@@ -121,6 +121,7 @@ func TestDurablePublicationLifecycle(t *testing.T) {
 	}
 	evaluation.Event = events[0]
 	evaluation.Event.Summary = material.Body
+	evaluation.Urgent = false
 	staleSettings := channel
 	channel.Settings.BlockedTerms = []string{"blocked"}
 	channel, err = store.UpdateChannel(ctx, channel.ID, channel)
@@ -138,7 +139,7 @@ func TestDurablePublicationLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	approveAll(t, store)
-	update, err := store.ClaimPublication(ctx, channel.ID, model.TargetTelegram, channel.TelegramChatID, true, true, now, now)
+	update, err := store.ClaimPublication(ctx, channel.ID, model.TargetTelegram, channel.TelegramChatID, true, false, now, now.Add(-time.Hour))
 	if err != nil || update.Version != 2 || update.Body != material.Body {
 		t.Fatalf("new version = %+v, %v", update, err)
 	}
