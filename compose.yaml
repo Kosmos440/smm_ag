@@ -9,8 +9,28 @@ x-backend: &backend
   restart: unless-stopped
 
 x-database-url: &database-url "postgres://smm:${POSTGRES_PASSWORD:?Copy .env.example to .env}@db:5432/smm?sslmode=disable"
+x-topic-providers: &topic-providers
+  TOPIC_EMBEDDINGS_URL: ${TOPIC_EMBEDDINGS_URL:-}
+  TOPIC_EMBEDDINGS_MODEL: ${TOPIC_EMBEDDINGS_MODEL:-}
+  TOPIC_EMBEDDINGS_API_KEY: ${TOPIC_EMBEDDINGS_API_KEY:-}
+  TOPIC_LLM_URL: ${TOPIC_LLM_URL:-}
+  TOPIC_LLM_MODEL: ${TOPIC_LLM_MODEL:-}
+  TOPIC_LLM_API_KEY: ${TOPIC_LLM_API_KEY:-}
 
 services:
+  llm:
+    profiles: ["llm-local"]
+    image: ghcr.io/ggml-org/llama.cpp:server@sha256:5b43086e3ba7ea5794d72904654f6cd41224a9b1c6ac0398f4940ee380d30f23
+    command: ["--model", "/models/qwen3-4b-instruct-q4_k_m.gguf", "--alias", "qwen3-4b-instruct", "--host", "0.0.0.0", "--port", "8080", "--ctx-size", "8192", "--parallel", "1", "--threads", "6"]
+    volumes:
+      - type: bind
+        source: ${SMM_LLM_DIR:-D:/smm-agent-models}
+        target: /models
+        read_only: true
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+
   media:
     image: chrislusf/seaweedfs:4.52
     entrypoint: ["/usr/bin/weed"]
@@ -48,6 +68,7 @@ services:
     <<: *backend
     command: ["/app/api"]
     environment:
+      <<: *topic-providers
       DATABASE_URL: *database-url
       HTTP_ADDR: "0.0.0.0:8180"
       LLM_FILTERS_URL: ${LLM_FILTERS_URL:-}
@@ -71,6 +92,7 @@ services:
         bind:
           create_host_path: false
     environment:
+      <<: *topic-providers
       S3_ENDPOINT: http://media:8333
       S3_BUCKET: ${S3_BUCKET:-news-media}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env}
@@ -80,6 +102,7 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       COLLECT_INTERVAL: ${COLLECT_INTERVAL:-2m}
       WORKER_TICK_INTERVAL: ${WORKER_TICK_INTERVAL:-5s}
+      EVENT_CATALOG_SHADOW: ${EVENT_CATALOG_SHADOW:-0}
 
   integration:
     profiles: ["test"]

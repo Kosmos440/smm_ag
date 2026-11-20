@@ -13,10 +13,13 @@ import (
 	"smmagent/internal/news"
 	"smmagent/internal/postgres"
 	"smmagent/internal/publishing"
+	"smmagent/internal/topic"
 )
 
 type scheduler struct {
 	store           *postgres.Store
+	classifier      topic.Classifier
+	articleFetch    func(context.Context, model.Material) (model.Material, error)
 	fetchers        map[model.SourceKind]ingest.Fetcher
 	publishers      map[model.Target]publishing.Publisher
 	collectInterval time.Duration
@@ -140,19 +143,40 @@ func (s *scheduler) collectSource(ctx context.Context, source model.Source) {
 }
 
 func (s *scheduler) evaluate(ctx context.Context, channel model.Channel, now time.Time) error {
+	evaluationCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	classifier := s.classifier
+	classifier.Store = s.store
 	since := now.Add(-time.Duration(channel.Settings.MaxAgeMinutes) * time.Minute)
 	materials, err := s.store.UnprocessedMaterials(ctx, channel.ID, since, 100)
 	if err != nil {
 		return err
 	}
 	for _, item := range materials {
-		candidates, err := s.store.CandidateEvents(ctx, channel.ID, now.AddDate(0, 0, -30), 200)
+		if evaluationCtx.Err() != nil {
+			break
+		}
+		material, decision, ready, err := s.classify(evaluationCtx, classifier, item, channel.Settings, time.Now().UTC())
+		if evaluationCtx.Err() != nil && ctx.Err() == nil {
+			break
+		}
 		if err != nil {
 			return err
 		}
-		result := news.Evaluate(item.Material, item.Source, channel.Settings, candidates, now)
+		if !ready {
+			continue
+		}
+		result := model.Evaluation{Reason: decision.Reason}
+		if decision.Verdict == model.TopicRelevant {
+			candidates, err := s.store.CandidateEvents(ctx, channel.ID, now.AddDate(0, 0, -30), 200)
+			if err != nil {
+				return err
+			}
+			result = news.EvaluateRelevant(material, item.Source, channel.Settings, candidates, now)
+		}
+		result.Topic = &decision
 		result.Event.ChannelID = channel.ID
-		if err := s.store.ApplyEvaluation(ctx, channel, item.Material, result, now); err != nil {
+		if err := s.store.ApplyEvaluation(ctx, channel, material, result, time.Now().UTC()); err != nil {
 			return fmt.Errorf("material %d: %w", item.Material.ID, err)
 		}
 	}
@@ -164,11 +188,11 @@ func (s *scheduler) deliver(ctx context.Context, channel model.Channel, target m
 		return
 	}
 	for range 20 {
-		sent, err := s.deliverOne(ctx, channel, target, destination)
+		processed, err := s.deliverOne(ctx, channel, target, destination)
 		if err != nil && ctx.Err() == nil {
 			log.Printf("deliver channel %d (%s): %v", channel.ID, target, err)
 		}
-		if !sent || err != nil {
+		if !processed || err != nil {
 			return
 		}
 	}
@@ -193,6 +217,9 @@ func (s *scheduler) deliverOne(ctx context.Context, channel model.Channel, targe
 		return false, err
 	}
 
+	if post.State == model.PublicationRejected {
+		return true, nil
+	}
 	previous := ""
 	if target == model.TargetTelegram {
 		previous, err = s.store.PreviousExternalID(ctx, post)

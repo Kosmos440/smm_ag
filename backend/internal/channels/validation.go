@@ -2,6 +2,7 @@ package channels
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -129,6 +130,9 @@ func normalizeSettings(s *model.Settings) error {
 	if err := normalizeTerms("settings.blocked_terms", &s.BlockedTerms); err != nil {
 		return err
 	}
+	if err := normalizeProfile(s.TopicProfile); err != nil {
+		return err
+	}
 	s.TimeZone = strings.TrimSpace(s.TimeZone)
 	if s.TimeZone == "" {
 		s.TimeZone = "UTC"
@@ -152,6 +156,9 @@ func normalizeSettings(s *model.Settings) error {
 	if s.MinIntervalMinutes < 0 || s.MinIntervalMinutes > minutesInWeek {
 		return invalid("settings.min_interval_minutes", "must be between 0 and 10080")
 	}
+	if s.MaxIntervalMinutes != 0 && (s.MinIntervalMinutes < 1 || s.MaxIntervalMinutes < s.MinIntervalMinutes || s.MaxIntervalMinutes > minutesInWeek) {
+		return invalid("settings.max_interval_minutes", "requires 1 <= min_interval_minutes <= max_interval_minutes <= 10080")
+	}
 	if (s.QuietStartHour == nil) != (s.QuietEndHour == nil) {
 		return invalid("settings quiet hours", "must include both quiet_start_hour and quiet_end_hour")
 	}
@@ -160,6 +167,58 @@ func normalizeSettings(s *model.Settings) error {
 		if start < 0 || start > 23 || end < 0 || end > 23 || start == end {
 			return invalid("settings quiet hours", "must be distinct whole hours between 0 and 23")
 		}
+	}
+	return nil
+}
+
+func normalizeProfile(profile *model.TopicProfile) error {
+	if profile == nil {
+		return nil
+	}
+	const field = "settings.topic_profile"
+	profile.Description = strings.Join(strings.Fields(profile.Description), " ")
+	if utf8.RuneCountInString(profile.Description) > 1000 || len(profile.Subtopics) > 16 {
+		return invalid(field, "allows a description of up to 1000 characters and at most 16 subtopics")
+	}
+	names := map[string]bool{}
+	for i := range profile.Subtopics {
+		subtopic := &profile.Subtopics[i]
+		if err := normalizeText(field+".subtopics.name", &subtopic.Name, 100); err != nil {
+			return err
+		}
+		key := strings.ToLower(subtopic.Name)
+		if names[key] {
+			return invalid(field+".subtopics", "must have distinct names")
+		}
+		names[key] = true
+		if err := normalizeTerms(field+".subtopics.keywords", &subtopic.Keywords); err != nil {
+			return err
+		}
+		if len(subtopic.Keywords) > 15 {
+			return invalid(field+".subtopics.keywords", "must contain at most 15 terms per subtopic")
+		}
+	}
+	if err := normalizeTerms(field+".context_terms", &profile.ContextTerms); err != nil {
+		return err
+	}
+	for _, examples := range [][]string{profile.PositiveExamples, profile.NegativeExamples} {
+		if len(examples) > 12 {
+			return invalid(field, "allows at most 12 examples of each kind")
+		}
+		for i := range examples {
+			examples[i] = strings.Join(strings.Fields(examples[i]), " ")
+			if err := normalizeText(field+".examples", &examples[i], 500); err != nil {
+				return err
+			}
+		}
+	}
+	for _, threshold := range []*float64{profile.VectorAccept, profile.VectorReject} {
+		if threshold != nil && (math.IsNaN(*threshold) || *threshold < -1 || *threshold > 1) {
+			return invalid(field, "vector thresholds must be between -1 and 1")
+		}
+	}
+	if profile.VectorAccept != nil && profile.VectorReject != nil && *profile.VectorReject >= *profile.VectorAccept {
+		return invalid(field, "vector_reject must be less than vector_accept")
 	}
 	return nil
 }

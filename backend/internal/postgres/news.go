@@ -61,6 +61,10 @@ func (s *Store) UnprocessedMaterials(ctx context.Context, channelID int64, since
 		from materials m join sources s on s.id = m.source_id
 		where s.status = 'verified' and coalesce(m.published_at, m.fetched_at) >= $2
 		and not exists (
+			select 1 from material_articles a where a.material_id = m.id and a.state = 'pending'
+				and a.expires_at > now()
+		)
+		and not exists (
 			select 1 from material_evaluations me where me.channel_id = $1 and me.material_id = m.id
 		)
 		order by coalesce(m.published_at, m.fetched_at), m.id limit $3`, channelID, since, limit)
@@ -155,8 +159,9 @@ func (s *Store) ApplyEvaluation(ctx context.Context, channel model.Channel, mate
 		eventID = &event.ID
 	}
 	if _, err := tx.Exec(ctx, `insert into material_evaluations
-		(channel_id, material_id, event_id, outcome, reason, evaluated_at) values ($1, $2, $3, $4, $5, $6)`,
-		channel.ID, material.ID, eventID, outcome, evaluation.Reason, now); err != nil {
+		(channel_id, material_id, event_id, outcome, reason, evaluated_at, topic_decision)
+		values ($1, $2, $3, $4, $5, $6, $7)`,
+		channel.ID, material.ID, eventID, outcome, evaluation.Reason, now, evaluation.Topic); err != nil {
 		return storeError(err)
 	}
 	return tx.Commit(ctx)

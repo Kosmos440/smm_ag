@@ -2,6 +2,7 @@ package publishing
 
 import (
 	"context"
+	"math/rand/v2"
 	"time"
 
 	"smmagent/internal/model"
@@ -38,6 +39,11 @@ func Window(settings model.Settings, now, lastSent time.Time) (urgent, reserve b
 		}
 	}
 	waitMinutes := max(settings.ReserveAfterMinutes, settings.MinIntervalMinutes)
+	if settings.MaxIntervalMinutes > 0 && !lastSent.IsZero() {
+		// Use the persisted delivery timestamp to keep the same deadline across ticks and restarts.
+		rng := rand.New(rand.NewPCG(uint64(lastSent.Unix()), uint64(lastSent.Nanosecond())))
+		waitMinutes = settings.MinIntervalMinutes + rng.IntN(settings.MaxIntervalMinutes-settings.MinIntervalMinutes+1)
+	}
 	return !quiet || settings.UrgentOutsideHours,
 		!quiet && (lastSent.IsZero() || !now.Before(lastSent.Add(time.Duration(waitMinutes)*time.Minute)))
 }

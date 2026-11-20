@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"smmagent/internal/model"
+	"smmagent/internal/news"
 )
 
 const publicationColumns = `id, channel_id, event_id, version, target, destination, state,
@@ -133,23 +134,52 @@ func (s *Store) LastSent(ctx context.Context, channelID int64, target model.Targ
 }
 
 func (s *Store) ClaimPublication(ctx context.Context, channelID int64, target model.Target, destination string, allowUrgent, allowReserve bool, now, reserveBefore time.Time) (model.Publication, error) {
-	return scanPublication(s.pool.QueryRow(ctx, `update publications set state = 'sending'
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return model.Publication{}, err
+	}
+	defer rollback(tx)
+	post, err := scanPublication(tx.QueryRow(ctx, `update publications set state = 'sending'
 		where id = (
 			select p.id from publications p
 			join channels c on c.id = p.channel_id and c.enabled
+			cross join lateral (
+				select p.urgent or (p.version > 1 and exists (
+					select 1 from publications previous
+					where previous.event_id = p.event_id and previous.target = p.target
+						and previous.destination = p.destination and previous.version < p.version
+						and previous.state = 'sent'
+				)) as immediate
+			) delivery
 			where p.channel_id = $1 and p.target = $2 and p.destination = $3
 			and p.state = 'pending' and p.expires_at > $6
 			and (not (c.settings @> '{"require_approval":true}'::jsonb) or p.review_decision is true)
-			and ((p.urgent and $4) or (not p.urgent and $5 and p.created_at <= $7))
+			and ((delivery.immediate and $4) or (not delivery.immediate and $5 and p.created_at <= $7))
 			and ((p.target = 'website' and c.website) or (p.target = 'telegram' and p.destination = c.telegram_chat_id))
 			and not exists (
 				select 1 from publications ongoing
 				where ongoing.event_id = p.event_id and ongoing.target = p.target and ongoing.destination = p.destination
 				and ongoing.state in ('sending', 'uncertain')
 			)
-			order by p.urgent desc, p.priority desc, p.id limit 1 for update of p skip locked
+			order by delivery.immediate desc, p.priority desc, p.id limit 1 for update of p skip locked
 		)
 		returning `+publicationColumns, channelID, target, destination, allowUrgent, allowReserve, now, reserveBefore))
+	if err != nil {
+		return model.Publication{}, err
+	}
+	body, reason := news.PrepareBody(post.Title, post.Body)
+	if reason != "" || body != post.Body {
+		post.Body = body
+		if reason != "" {
+			post.State, post.LastError = model.PublicationRejected, reason
+		}
+		_, err = tx.Exec(ctx, "update publications set body = $2, state = $3, last_error = $4 where id = $1",
+			post.ID, post.Body, post.State, post.LastError)
+		if err != nil {
+			return model.Publication{}, err
+		}
+	}
+	return post, tx.Commit(ctx)
 }
 
 func (s *Store) PreviousExternalID(ctx context.Context, p model.Publication) (string, error) {

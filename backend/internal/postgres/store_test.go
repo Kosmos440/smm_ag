@@ -83,6 +83,10 @@ func TestDurablePublicationLifecycle(t *testing.T) {
 	if _, err := store.DecideReview(ctx, approved[0].ID, true); err != nil {
 		t.Fatalf("repeat same review decision: %v", err)
 	}
+	// Simulate an approved queue snapshot prepared by the older worker.
+	if _, err := store.pool.Exec(ctx, "update publications set body = body || ' Читать далее' where channel_id = $1", channel.ID); err != nil {
+		t.Fatal(err)
+	}
 	website, err := store.ClaimPublication(ctx, channel.ID, model.TargetWebsite, "", true, true, now, now)
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +105,7 @@ func TestDurablePublicationLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	feed, err := store.ListSiteNews(ctx, 0, 10, 0)
-	if err != nil || len(feed) != 1 || feed[0].ID != website.ID {
+	if err != nil || len(feed) != 1 || feed[0].ID != website.ID || feed[0].Body != material.Body || telegram.Body != material.Body {
 		t.Fatalf("website feed = %+v, %v", feed, err)
 	}
 
@@ -121,6 +125,7 @@ func TestDurablePublicationLifecycle(t *testing.T) {
 	}
 	evaluation.Event = events[0]
 	evaluation.Event.Summary = material.Body
+	evaluation.Urgent = false
 	staleSettings := channel
 	channel.Settings.BlockedTerms = []string{"blocked"}
 	channel, err = store.UpdateChannel(ctx, channel.ID, channel)
@@ -138,7 +143,7 @@ func TestDurablePublicationLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	approveAll(t, store)
-	update, err := store.ClaimPublication(ctx, channel.ID, model.TargetTelegram, channel.TelegramChatID, true, true, now, now)
+	update, err := store.ClaimPublication(ctx, channel.ID, model.TargetTelegram, channel.TelegramChatID, true, false, now, now.Add(-time.Hour))
 	if err != nil || update.Version != 2 || update.Body != material.Body {
 		t.Fatalf("new version = %+v, %v", update, err)
 	}
@@ -182,8 +187,11 @@ func TestDurablePublicationLifecycle(t *testing.T) {
 	if !errors.Is(err, model.ErrNotFound) {
 		t.Fatalf("Telegram can send while an earlier outcome is uncertain: %v", err)
 	}
+	if _, err := store.pool.Exec(ctx, "update publications set body = title || '. Читать далее' where target = 'website' and state = 'pending' and channel_id = $1", channel.ID); err != nil {
+		t.Fatal(err)
+	}
 	website, err = store.ClaimPublication(ctx, channel.ID, model.TargetWebsite, "", true, true, now, now)
-	if err != nil || website.Version != 3 {
+	if err != nil || website.Version != 3 || website.State != model.PublicationRejected || website.LastError != "текст повторяет заголовок" {
 		t.Fatalf("website did not supersede pending older version independently: %+v, %v", website, err)
 	}
 	history, err := store.ListPublications(ctx, channel.ID, 10, 0)

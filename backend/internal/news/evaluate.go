@@ -12,25 +12,47 @@ import (
 // Evaluate classifies an individual source observation against the latest
 // persisted event versions. The caller owns version assignment and persistence.
 func Evaluate(material model.Material, source model.Source, settings model.Settings, candidates []model.Event, now time.Time) model.Evaluation {
+	if reason := Eligibility(material, source, settings, now); reason != "" {
+		return rejected(reason)
+	}
+	if !topicMatches(normalize(material.Title+" "+material.Body), settings) {
+		return rejected("материал не соответствует теме")
+	}
+	return EvaluateRelevant(material, source, settings, candidates, now)
+}
+
+// Eligibility applies the editorial rules that precede topic classification.
+func Eligibility(material model.Material, source model.Source, settings model.Settings, now time.Time) string {
 	if source.Status != model.SourceVerified {
-		return rejected("источник не проверен")
+		return "источник не проверен"
 	}
 	if strings.TrimSpace(material.Title) == "" || material.URL == "" {
-		return rejected("нет заголовка или ссылки")
+		return "нет заголовка или ссылки"
 	}
 	maxAge := time.Duration(settings.MaxAgeMinutes) * time.Minute
 	if material.PublishedAt.IsZero() || material.PublishedAt.After(now) ||
 		maxAge <= 0 || now.Sub(material.PublishedAt) > maxAge {
-		return rejected("дата материала неизвестна или новость несвежая")
+		return "дата материала неизвестна или новость несвежая"
 	}
+	if TopicBlocked(material, settings) {
+		return "запрещённая тема"
+	}
+	return ""
+}
+
+func TopicBlocked(material model.Material, settings model.Settings) bool {
+	return containsPhrase(normalize(material.Title+" "+material.Body), settings.BlockedTerms)
+}
+
+// EvaluateRelevant applies the event and publication rules after the topic check.
+func EvaluateRelevant(material model.Material, source model.Source, settings model.Settings, candidates []model.Event, now time.Time) model.Evaluation {
+	body, reason := PrepareBody(material.Title, material.Body)
+	if reason != "" {
+		return rejected(reason)
+	}
+	material.Body = body
 	text := material.Title + " " + material.Body
 	normalized := normalize(text)
-	if containsPhrase(normalized, settings.BlockedTerms) {
-		return rejected("запрещённая тема")
-	}
-	if !topicMatches(normalized, settings) {
-		return rejected("материал не соответствует теме")
-	}
 
 	organization := strings.TrimSpace(source.Organization)
 	if organization == "" {
@@ -38,6 +60,10 @@ func Evaluate(material model.Material, source model.Source, settings model.Setti
 	}
 	if organization == "" {
 		organization = material.Organization
+	}
+	if meeting, milestone := trilateralReport(material.Title, material.Body); meeting {
+		event, found := recentTrilateralEvent(candidates, now)
+		return evaluateTrilateral(material, organization, milestone, event, found, now)
 	}
 	facts := extractFacts(text, material.URL, organization)
 	event, found := matchEvent(material, facts, candidates)
@@ -155,9 +181,6 @@ func mentionsAudience(text, audience string) bool {
 
 func shortSummary(title, body string) string {
 	body = strings.TrimSpace(body)
-	if body == "" || normalize(body) == normalize(title) {
-		return title
-	}
 	for _, divider := range []string{"\n", " "} {
 		if strings.HasPrefix(body, title+divider) {
 			body = strings.TrimSpace(strings.TrimPrefix(body, title))

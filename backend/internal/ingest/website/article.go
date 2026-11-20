@@ -1,9 +1,12 @@
 package website
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"strings"
+	"unicode"
 
 	readability "codeberg.org/readeck/go-readability/v2"
 	"golang.org/x/net/html"
@@ -13,6 +16,10 @@ import (
 )
 
 func readArticlePage(doc *html.Node, page *url.URL, canonical string, structured *structuredArticle) (model.Material, bool) {
+	return readArticleWithDate(doc, page, canonical, structured, model.Material{})
+}
+
+func readArticleWithDate(doc *html.Node, page *url.URL, canonical string, structured *structuredArticle, original model.Material) (model.Material, bool) {
 	material := model.Material{URL: canonical, Media: ingest.HTMLMedia(doc, page)}
 	if material.URL == "" {
 		material.URL = page.String()
@@ -26,7 +33,10 @@ func readArticlePage(doc *html.Node, page *url.URL, canonical string, structured
 		material.PublishedAt = publishedAt(doc)
 	}
 	if material.PublishedAt.IsZero() {
-		return model.Material{}, false
+		material.PublishedAt = original.PublishedAt
+		if material.PublishedAt.IsZero() {
+			return model.Material{}, false
+		}
 	}
 	if material.Title == "" {
 		material.Title = strings.TrimSpace(meta(doc, "og:title"))
@@ -70,6 +80,55 @@ func readArticlePage(doc *html.Node, page *url.URL, canonical string, structured
 		material.Body = strings.TrimSpace(meta(doc, "description"))
 	}
 	return material, material.Title != ""
+}
+
+// FetchArticle expands a known RSS item using its article page.
+func (c *Collector) FetchArticle(ctx context.Context, original model.Material) (model.Material, error) {
+	page, err := ingest.Fetch(ctx, c.client, original.URL)
+	if err != nil {
+		return model.Material{}, err
+	}
+	doc, err := ingest.ParseHTML(page)
+	if err != nil {
+		return model.Material{}, err
+	}
+	canonical := canonicalURL(doc, page.URL)
+	structured := findStructuredArticle(doc, page.URL, canonical)
+	heading := ingest.First(doc, func(node *html.Node) bool { return node.Data == "h1" })
+	if structured == nil && heading == nil && !strings.EqualFold(meta(doc, "og:type"), "article") {
+		return model.Material{}, errors.New("article page not detected")
+	}
+	article, ok := readArticleWithDate(doc, page.URL, canonical, structured, original)
+	if !ok || !compatibleHeadline(original.Title, article.Title) {
+		return model.Material{}, errors.New("article headline differs from feed")
+	}
+	return article, nil
+}
+
+func compatibleHeadline(feed, page string) bool {
+	words := func(value string) []string {
+		return strings.FieldsFunc(strings.ReplaceAll(strings.ToLower(value), "ё", "е"),
+			func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
+	}
+	first, second := words(feed), words(page)
+	if len(first) == 0 || len(second) == 0 {
+		return false
+	}
+	if strings.Join(first, " ") == strings.Join(second, " ") {
+		return true
+	}
+	available := map[string]bool{}
+	for _, word := range second {
+		available[word] = true
+	}
+	common := 0
+	for _, word := range first {
+		if available[word] {
+			common++
+			delete(available, word)
+		}
+	}
+	return common >= 3 && common*4 >= len(first)*3
 }
 
 func canonicalURL(doc *html.Node, page *url.URL) string {

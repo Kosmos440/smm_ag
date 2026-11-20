@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 	"errors"
+	"smmagent/internal/model"
 	"strings"
 	"time"
 )
@@ -19,8 +20,9 @@ type FilterRequest struct {
 }
 
 type FilterSuggestion struct {
-	Keywords     []string `json:"keywords"`
-	BlockedTerms []string `json:"blocked_terms"`
+	TopicProfile *model.TopicProfile `json:"topic_profile,omitempty"`
+	Keywords     []string            `json:"keywords"`
+	BlockedTerms []string            `json:"blocked_terms"`
 }
 
 type FilterGenerator func(context.Context, FilterRequest) (FilterSuggestion, error)
@@ -58,6 +60,13 @@ func (s *Service) SuggestFilters(ctx context.Context, input FilterRequest) (Filt
 	}
 	if normalizeTerms("keywords", &result.Keywords) != nil || normalizeTerms("blocked_terms", &result.BlockedTerms) != nil {
 		return FilterSuggestion{}, ErrFilterGenerationFailed
+	}
+	if result.TopicProfile != nil {
+		result.TopicProfile.UseVectors, result.TopicProfile.UseLLM = nil, nil
+		result.TopicProfile.VectorAccept, result.TopicProfile.VectorReject = nil, nil
+		if normalizeProfile(result.TopicProfile) != nil {
+			return FilterSuggestion{}, ErrFilterGenerationFailed
+		}
 	}
 	seen := make(map[string]bool, len(result.Keywords))
 	for _, keyword := range result.Keywords {
