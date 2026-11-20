@@ -124,6 +124,7 @@ paths:
   /api/v1/channels/{id}/topic-evaluations/{materialID}/preview:
     post:
       operationId: previewTopicEvaluation
+      description: Rejects a description that repeats the headline before model evaluation. A missing description can use previously fetched article text.
       parameters:
         - $ref: '#/components/parameters/ID'
         - $ref: '#/components/parameters/MaterialID'

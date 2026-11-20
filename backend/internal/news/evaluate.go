@@ -46,6 +46,11 @@ func TopicBlocked(material model.Material, settings model.Settings) bool {
 
 // EvaluateRelevant applies the event and publication rules after the topic check.
 func EvaluateRelevant(material model.Material, source model.Source, settings model.Settings, candidates []model.Event, now time.Time) model.Evaluation {
+	body, reason := PrepareBody(material.Title, material.Body)
+	if reason != "" {
+		return rejected(reason)
+	}
+	material.Body = body
 	text := material.Title + " " + material.Body
 	normalized := normalize(text)
 
@@ -176,9 +181,6 @@ func mentionsAudience(text, audience string) bool {
 
 func shortSummary(title, body string) string {
 	body = strings.TrimSpace(body)
-	if body == "" || normalize(body) == normalize(title) {
-		return title
-	}
 	for _, divider := range []string{"\n", " "} {
 		if strings.HasPrefix(body, title+divider) {
 			body = strings.TrimSpace(strings.TrimPrefix(body, title))

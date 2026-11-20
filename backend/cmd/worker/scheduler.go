@@ -188,11 +188,11 @@ func (s *scheduler) deliver(ctx context.Context, channel model.Channel, target m
 		return
 	}
 	for range 20 {
-		sent, err := s.deliverOne(ctx, channel, target, destination)
+		processed, err := s.deliverOne(ctx, channel, target, destination)
 		if err != nil && ctx.Err() == nil {
 			log.Printf("deliver channel %d (%s): %v", channel.ID, target, err)
 		}
-		if !sent || err != nil {
+		if !processed || err != nil {
 			return
 		}
 	}
@@ -217,6 +217,9 @@ func (s *scheduler) deliverOne(ctx context.Context, channel model.Channel, targe
 		return false, err
 	}
 
+	if post.State == model.PublicationRejected {
+		return true, nil
+	}
 	previous := ""
 	if target == model.TargetTelegram {
 		previous, err = s.store.PreviousExternalID(ctx, post)

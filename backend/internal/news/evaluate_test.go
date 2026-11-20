@@ -61,6 +61,14 @@ func TestOfficialReleaseDuplicateAndCorrection(t *testing.T) {
 	}
 }
 
+func TestDistinctFiguresSurviveBodyComparison(t *testing.T) {
+	for _, body := range []string{"Ожидается −5 °C", "Ожидается +5 °F"} {
+		if _, reason := PrepareBody("Ожидается +5 °C", body); reason != "" {
+			t.Fatalf("distinct figure %q rejected: %s", body, reason)
+		}
+	}
+}
+
 func TestRejectsUnverifiedStaleBlockedAndOffTopic(t *testing.T) {
 	fresh := testNow.Add(-time.Minute)
 	for _, tc := range []struct {
@@ -102,6 +110,28 @@ func TestRoutineSecondaryCoverageAndOfficialConfirmation(t *testing.T) {
 	confirmed := Evaluate(material, official, localPolicy, []model.Event{existing}, testNow)
 	if !confirmed.Accepted || !confirmed.Changed || confirmed.Event.ID != 17 || !hasConfirmation(confirmed.Event.Facts) {
 		t.Fatalf("expected confirmation on existing event: %#v", confirmed)
+	}
+}
+
+func TestSourceBodyBeforeSelection(t *testing.T) {
+	const title = "Новые правила маркировки"
+	for _, tc := range []struct{ body, summary string }{
+		{"НОВЫЕ правила маркировки! Читать далее", ""},
+		{"Читать далее…", ""},
+		{"", ""},
+		{"Новые правила маркировки. Читать\u00a0далее →", ""},
+		{"Изменился перечень товаров. Читать далее", "Изменился перечень товаров."},
+		{"Изменился перечень товаров. читать далее…", "Изменился перечень товаров."},
+		{"Редактор попросил читать далее.", "Редактор попросил читать далее."},
+		{"Кнопку «Читать далее» перенесли.", "Кнопку «Читать далее» перенесли."},
+		{"Новые правила маркировки\nДобавлен отдельный раздел.", "Добавлен отдельный раздел."},
+	} {
+		t.Run(tc.body, func(t *testing.T) {
+			result := Evaluate(model.Material{Title: title, Body: tc.body, URL: "https://example.org/item", PublishedAt: testNow}, media, policy, nil, testNow)
+			if result.Accepted != (tc.summary != "") || result.Event.Summary != tc.summary {
+				t.Fatalf("accepted=%v, summary=%q, reason=%q", result.Accepted, result.Event.Summary, result.Reason)
+			}
+		})
 	}
 }
 

@@ -14,6 +14,16 @@ import (
 
 func (s *scheduler) classify(ctx context.Context, classifier topic.Classifier, item model.SourcedMaterial, settings model.Settings, now time.Time) (model.Material, model.TopicDecision, bool, error) {
 	material := item.Material
+	if reason := news.Eligibility(material, item.Source, settings, now); reason != "" {
+		return material, eligibilityDecision(settings, reason), true, nil
+	}
+	body, reason := news.PrepareBody(material.Title, material.Body)
+	// An absent RSS description can be read from the article. An explicit
+	// headline copy is rejected before any article lookup or model call.
+	if reason != "" && (item.Source.Kind != model.SourceRSS || material.Body != "") {
+		return material, eligibilityDecision(settings, reason), true, nil
+	}
+	material.Body = body
 	lead := ""
 	var state string
 	// RSS either uses the source text or the article shared by every channel.
@@ -24,7 +34,8 @@ func (s *scheduler) classify(ctx context.Context, classifier topic.Classifier, i
 		}
 		state = article.State
 		if state == "ready" {
-			material.Body, lead = article.Body, article.Lead
+			material.Body, reason = news.PrepareBody(material.Title, article.Body)
+			lead, _ = news.PrepareBody(material.Title, article.Lead)
 			media := append([]model.Media{}, material.Media...)
 			seen := map[string]bool{}
 			for _, entry := range media {
@@ -39,7 +50,12 @@ func (s *scheduler) classify(ctx context.Context, classifier topic.Classifier, i
 			material.Media = media
 		}
 	}
-	if reason := news.Eligibility(item.Material, item.Source, settings, now); reason != "" {
+	if reason != "" {
+		if item.Source.Kind == model.SourceRSS && s.articleFetch != nil && (state == "" || state == "pending") {
+			until := material.PublishedAt.Add(time.Duration(settings.MaxAgeMinutes) * time.Minute)
+			err := s.store.QueueArticle(ctx, material.ID, until)
+			return material, model.TopicDecision{}, false, err
+		}
 		return material, eligibilityDecision(settings, reason), true, nil
 	}
 	if news.TopicBlocked(material, settings) {

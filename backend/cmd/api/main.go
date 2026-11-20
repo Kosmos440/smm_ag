@@ -62,17 +62,28 @@ func run() error {
 		if err != nil {
 			return model.TopicDecision{}, err
 		}
+		body, reason := news.PrepareBody(material.Title, material.Body)
+		if reason != "" && material.Body != "" {
+			return model.TopicDecision{Verdict: model.TopicIrrelevant, Method: "rules",
+				Reason: reason, ProfileVersion: topic.ProfileVersion(channel.Settings)}, nil
+		}
+		material.Body = body
 		article, err := store.Article(ctx, id)
 		if err != nil {
 			return model.TopicDecision{}, err
 		}
 		blocked := news.TopicBlocked(material, channel.Settings)
 		if article.State == "ready" {
-			material.Body = article.Body
+			material.Body, reason = news.PrepareBody(material.Title, article.Body)
+			article.Lead, _ = news.PrepareBody(material.Title, article.Lead)
 		}
 		if blocked || news.TopicBlocked(material, channel.Settings) {
 			return model.TopicDecision{Verdict: model.TopicIrrelevant, Method: "rules",
 				Reason: "запрещённая тема", ProfileVersion: topic.ProfileVersion(channel.Settings)}, nil
+		}
+		if reason != "" {
+			return model.TopicDecision{Verdict: model.TopicInsufficient, Method: "rules",
+				Reason: reason, ProfileVersion: topic.ProfileVersion(channel.Settings)}, nil
 		}
 		decision, err := classifier.Match(ctx, material, article.Lead, channel.Settings)
 		if err != nil {
